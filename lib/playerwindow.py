@@ -1,13 +1,13 @@
 # PyQt5 Video player
 #!/usr/bin/env python
 
-from PyQt5.QtCore import QDir, Qt, QUrl
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
-        QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget)
-from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction
-from PyQt5.QtGui import QIcon
+
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5 import QtCore, QtGui
 
 import sys
 
@@ -43,6 +43,9 @@ class PlayerWindow(QMainWindow):
 
         self.videoWidget = QVideoWidget()
         self.videoWidget.setStyleSheet(grayStyle)
+
+        self.videoOverlay = QLabel(self.videoWidget)
+        self.videoOverlay.hide()
 
         self.playButton = QPushButton()
         self.playButton.setEnabled(False)
@@ -111,8 +114,20 @@ class PlayerWindow(QMainWindow):
             self.playButton.setEnabled(True)
 
             self.featureWindow.setVideo(fileName)
+            self.featureWindow.setFrame.connect(self.onSetFrame)
             self.featureWindow.showWidget()
 
+    @pyqtSlot(int)
+    def onSetFrame(self, frameTime):
+        self.setPosition(frameTime * 1000)
+
+    @pyqtSlot(int, numpy.ndarray)
+    def onPrintFrame(self, frameTime, frame):
+        self.setPosition(frameTime * 1000)
+
+        self.videoOverlay.setPixmap(self.frameToPixmap(frame))
+        self.videoOverlay.show()
+    
     def exitCall(self):
         sys.exit(app.exec_())
 
@@ -122,6 +137,8 @@ class PlayerWindow(QMainWindow):
         else:
             self.mediaPlayer.play()
 
+        self.videoOverlay.hide()
+
     def mediaStateChanged(self, state):
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.playButton.setIcon(
@@ -130,15 +147,43 @@ class PlayerWindow(QMainWindow):
             self.playButton.setIcon(
                     self.style().standardIcon(QStyle.SP_MediaPlay))
 
+        self.videoOverlay.hide()
+
     def positionChanged(self, position):
         self.positionSlider.setValue(position)
 
+        self.videoOverlay.hide()
+
     def durationChanged(self, duration):
+        print(duration)
         self.positionSlider.setRange(0, duration)
 
+        self.videoOverlay.hide()
+
     def setPosition(self, position):
+        print(position)
         self.mediaPlayer.setPosition(position)
+
+        self.videoOverlay.hide()
 
     def handleError(self):
         self.playButton.setEnabled(False)
         self.errorLabel.setText("Error: " + self.mediaPlayer.errorString())
+
+    def frameToPixmap(self, frame, color): #convert a opencv image to a qt pixmap 
+        if color == cv2.COLOR_BGR2RGB:
+            rgbImage = cv2.cvtColor(frame, color)
+            h, w, ch = rgbImage.shape
+            bytesPerLine = ch * w
+
+            convertToQtFormat = QtGui.QImage(rgbImage.data, w, h, bytesPerLine, QtGui.QImage.Format_RGB888)
+            p = convertToQtFormat.scaled(self.width, self.height, Qt.KeepAspectRatio)
+
+        elif color == cv2.COLOR_BGR2GRAY:
+            #gray = cv2.cvtColor(frame, color)
+            h, w = frame.shape[:2]
+
+            convertToQtFormat = QtGui.QImage(frame, w, h, QImage.Format_Grayscale8)
+            p = convertToQtFormat.scaled(self.width, self.height, Qt.KeepAspectRatio)
+
+        return QPixmap.fromImage(p)

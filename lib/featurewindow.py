@@ -10,6 +10,18 @@ import time
 import numpy as np
 import threading
 
+whiteStyle = """
+QVideoWidget{
+background-color: #FFFFFF;
+}
+"""
+
+cremeStyle = """
+QWidget{
+background-color: #FFE6CD;
+}
+"""
+
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, spacing=-1):
         super(FlowLayout, self).__init__(parent)
@@ -96,17 +108,55 @@ class FlowLayout(QLayout):
 
         return y + lineHeight - rect.y()
 
+class CustomButtom(QLabel):
+    sendText = pyqtSignal(str)
+
+    def mousePressEvent(self, event):
+        self.sendText.emit(self.text())
+
+    def enterEvent(self, event):
+        self.setStyleSheet(cremeStyle)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet(whiteStyle)
+
+    #Equipement Widget definition#
+    def __init__(self, text):
+        super(CustomButtom, self).__init__()
+        self.setStyleSheet(whiteStyle)
+        self.setText(text)
+
+class OutfitLabel(QLabel):
+    sendInfo = pyqtSignal(str, int, numpy.ndarray)
+
+    def mousePressEvent(self, event):
+        self.sendInfo.emit(self.text(), self.frameTime, self.frame)
+
+    def enterEvent(self, event):
+        self.setStyleSheet(cremeStyle)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet(whiteStyle)
+
+    #Equipement Widget definition#
+    def __init__(self, text, frameTime, frame):
+        super(OutfitLabel, self).__init__()
+        self.setStyleSheet(whiteStyle)
+        self.setText(text)
+        self.frameTime = frameTime
+        self.frame = frame
+
 class ResultWidget(QWidget):
     showResult = pyqtSignal(int, list)
 
     def mousePressEvent(self, event):
-        print ("clicked")
+        self.showResult.emit(self.frameTime, self.imageList)
 
     def enterEvent(self, event):
-        print("hovered")
+        self.setStyleSheet(cremeStyle)
 
     def leaveEvent(self, event):
-        print("left")
+        self.setStyleSheet(whiteStyle)
 
     #Equipement Widget definition#
     def __init__(self, frameNumber, frameTime):
@@ -115,9 +165,12 @@ class ResultWidget(QWidget):
         self.frameNumber = frameNumber
         self.frameTime = frameTime
 
+        self.imageList = [] 
+
         self.initUI()
 
     def initUI(self):
+        self.fillWidget = QWidget(self)
         frameTimeSecond = int(self.frameTime % 60)
         frameTimeMinute = int(self.frameTime / 60)
         frameNumberLabel = QLabel("Frame number: {}".format(self.frameNumber))
@@ -134,9 +187,10 @@ class ResultWidget(QWidget):
         layout.addLayout(self.flowLayout)
         layout.addStretch()
 
-        self.setLayout(layout)
+        self.fillWidget.setLayout(layout)
 
-    def addWidget(self, widget):
+    def addWidget(self, widget, image):
+        self.imageList.append(image)
         self.flowLayout.addWidget(widget)
 
 class ResultHolder(QScrollArea):
@@ -179,6 +233,8 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
     #Signals#
     createResultWidget = pyqtSignal(list)
+    setFrame = pyqtSignal(int)
+    printFrame = pyqtSignal(int, numpy.ndarray)
 
     def __init__(self, title):
         super(FeatureWindow, self).__init__()
@@ -190,6 +246,9 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         self.running = False
 
         self.createResultWidget.connect(self.onCreateResultWidget)
+
+        self.searchLayout = FlowLayout()
+        self.searchList = []
 
         self.initUI()
 
@@ -222,6 +281,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         vBox.addLayout(hBox)
         vBox.addWidget(runButton)
         vBox.addLayout(hBox2)
+        vBox.addLayout(self.searchLayout)
         vBox.addStretch()
 
         self.resultHolder = ResultHolder()
@@ -247,6 +307,9 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         if self.running == False:
             self.threadAnalyse = threading.Thread(target = self.analyse)#Lance le thread cycleThread
             self.threadAnalyse.start()
+
+    def stopAnalyse(self):
+        self.running = False
 
     def analyse(self):
         print("Running the pipeline on a Video")
@@ -283,13 +346,13 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
                 for x in range(len(result[0])):
                     topBodyPrediction = [result[0][x]['prediction'][0][0], 0, result[0][x]['prediction'][0][2], result[0][x]['prediction'][0][3], result[0][x]['prediction'][0][4], 0, result[0][x]['prediction'][0][6]]
 
-                    resultWidget.append(class_names[np.argmax(topBodyPrediction)])
+                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[0][x]['image']))
 
                 #Bottom Result
                 for x in range(len(result[1])):
                     bottomBodyPrediction = [0, result[1][x]['prediction'][0][1], 0, 0, 0, 0, result[1][x]['prediction'][0][6]]
 
-                    resultWidget.append(class_names[np.argmax(topBodyPrediction)])
+                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[1][x]['image']))
 
                 if resultWidget != None:
                     self.createResultWidget.emit(resultWidget)
@@ -313,10 +376,25 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
             if x == 0:
                 pass
             else:
-                label = QLabel(widgetInfo[x])
-                resultWidget.addWidget(label)
+                if widgetInfo[x][0] not in self.searchList:
+                    self.searchList.append(widgetInfo[x][0])
+                    button = CustomButtom(widgetInfo[x][0])
+                    self.searchLayout.addWidget(button)
 
-        self.resultHolder.appendWidget(resultWidget) 
+                label = OutfitLabel(widgetInfo[x][0], widgetInit[1], widgetInfo[x][1])
+                label.sendInfo.connect(self.onOutfitLabelClicked)
+                resultWidget.addWidget(label, widgetInfo[x][1])
+
+        self.resultHolder.appendWidget(resultWidget)
+        resultWidget.showResult.connect(self.onWidgetClicked)
+
+    @pyqtSlot(int, list)
+    def onWidgetClicked(self, frameNumber):
+        self.setFrame.emit(frameNumber)
+
+    @pyqtSlot(str, int, numpy.ndarray)
+    def onOutfitLabelClicked(self, string, frameNumber, frame):
+        self.printFrame.emit(frameNumber, frame)
 
     def setCustomWidget(self, widget):
         self.setCentralWidget(widget)
