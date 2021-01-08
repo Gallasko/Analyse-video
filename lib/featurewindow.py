@@ -127,7 +127,7 @@ class CustomButtom(QLabel):
         self.setText(text)
 
 class OutfitLabel(QLabel):
-    sendInfo = pyqtSignal(str, int, numpy.ndarray)
+    sendInfo = pyqtSignal(str, int, np.ndarray)
 
     def mousePressEvent(self, event):
         self.sendInfo.emit(self.text(), self.frameTime, self.frame)
@@ -234,7 +234,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
     #Signals#
     createResultWidget = pyqtSignal(list)
     setFrame = pyqtSignal(int)
-    printFrame = pyqtSignal(int, numpy.ndarray)
+    printFrame = pyqtSignal(int, np.ndarray)
 
     def __init__(self, title):
         super(FeatureWindow, self).__init__()
@@ -392,7 +392,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
     def onWidgetClicked(self, frameNumber):
         self.setFrame.emit(frameNumber)
 
-    @pyqtSlot(str, int, numpy.ndarray)
+    @pyqtSlot(str, int, np.ndarray)
     def onOutfitLabelClicked(self, string, frameNumber, frame):
         self.printFrame.emit(frameNumber, frame)
 

@@ -12,6 +12,9 @@ from PyQt5 import QtCore, QtGui
 import sys
 
 from .featurewindow import FeatureWindow
+from .resultwindow import ResultWindow
+
+import cv2
 
 appStyle = """
 QMainWindow{
@@ -31,21 +34,48 @@ background-color: #212529;
 }
 """
 
+whiteStyle = """
+QVideoWidget{
+background-color: #FFFFFF;
+}
+"""
+
+cremeStyle = """
+QWidget{
+background-color: #FFE6CD;
+}
+"""
+
+import numpy as np
+
 class PlayerWindow(QMainWindow):
     def __init__(self, parent=None):
         super(PlayerWindow, self).__init__(parent)
+        self.width = 640
+        self.height = 480
+
+        self.setGeometry(0,0, self.width, self.height)
+
         self.setWindowTitle("PyQt Video Player Widget") 
         self.setStyleSheet(appStyle)
 
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
 
         self.featureWindow = FeatureWindow("List of Features")
+        self.featureWindow.printFrame.connect(self.onPrintFrame)
 
         self.videoWidget = QVideoWidget()
         self.videoWidget.setStyleSheet(grayStyle)
 
         self.videoOverlay = QLabel(self.videoWidget)
-        self.videoOverlay.hide()
+        self.videoOverlay.setStyleSheet(cremeStyle)
+        self.videoOverlay.show()
+
+        self.imageMask = None
+
+        layout_box = QHBoxLayout(self.videoWidget)
+        layout_box.setContentsMargins(0, 0, 0, 0)
+        layout_box.addWidget(self.videoOverlay)
 
         self.playButton = QPushButton()
         self.playButton.setEnabled(False)
@@ -121,13 +151,18 @@ class PlayerWindow(QMainWindow):
     def onSetFrame(self, frameTime):
         self.setPosition(frameTime * 1000)
 
-    @pyqtSlot(int, numpy.ndarray)
+    @pyqtSlot(int, np.ndarray)
     def onPrintFrame(self, frameTime, frame):
         self.setPosition(frameTime * 1000)
 
-        self.videoOverlay.setPixmap(self.frameToPixmap(frame))
+        self.videoOverlay.setPixmap(self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
         self.videoOverlay.show()
-    
+
+        if self.imageMask == None:
+            self.imageMask = ResultWindow("Mask", self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
+        else:
+            self.imageMask.setImage(self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
+
     def exitCall(self):
         sys.exit(app.exec_())
 
