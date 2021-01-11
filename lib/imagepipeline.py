@@ -220,11 +220,9 @@ class ImagePipeline():
                         bodyMasks.append(modelResults)
 
             for res in bodyMasks:
-                print(res['image'].shape)
                 res['rescaled_image'] = cv2.resize(res['image'], dsize=(28, 28), interpolation=cv2.INTER_CUBIC)
 
                 arr = np.asarray(res['rescaled_image'][None, ...])
-                print(arr.shape)
                 res['prediction'] = self.probability_model.predict(arr)
                 res['best_prediction'] = np.argmax(res['prediction'])
 

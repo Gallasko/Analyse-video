@@ -16,6 +16,9 @@ from .resultwindow import ResultWindow
 
 import cv2
 
+import matplotlib
+import matplotlib.pyplot as plt
+
 appStyle = """
 QMainWindow{
 background-color: #6c757d;
@@ -53,6 +56,8 @@ class PlayerWindow(QMainWindow):
         super(PlayerWindow, self).__init__(parent)
         self.width = 640
         self.height = 480
+
+        matplotlib.use('QT5Agg')
 
         self.setGeometry(0,0, self.width, self.height)
 
@@ -163,6 +168,9 @@ class PlayerWindow(QMainWindow):
         else:
             self.imageMask.setImage(self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
 
+        plt.imshow(frame, cmap=plt.cm.binary)
+        plt.show()
+
     def exitCall(self):
         sys.exit(app.exec_())
 
@@ -215,10 +223,10 @@ class PlayerWindow(QMainWindow):
             p = convertToQtFormat.scaled(self.width, self.height, Qt.KeepAspectRatio)
 
         elif color == cv2.COLOR_BGR2GRAY:
-            #gray = cv2.cvtColor(frame, color)
+            frame = np.asarray(frame, dtype = np.uint8)
             h, w = frame.shape[:2]
 
-            convertToQtFormat = QtGui.QImage(frame, w, h, QImage.Format_Grayscale8)
+            convertToQtFormat = QtGui.QImage(frame.data, w, h, QImage.Format_Grayscale8) 
             p = convertToQtFormat.scaled(self.width, self.height, Qt.KeepAspectRatio)
 
         return QPixmap.fromImage(p)
