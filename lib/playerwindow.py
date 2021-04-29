@@ -13,11 +13,14 @@ import sys
 
 from .featurewindow import FeatureWindow
 from .resultwindow import ResultWindow
+from .videostream import VideoStream
 
 import cv2
 
 import matplotlib
 import matplotlib.pyplot as plt
+
+from mrcnn import visualize
 
 appStyle = """
 QMainWindow{
@@ -45,7 +48,7 @@ background-color: #FFFFFF;
 
 cremeStyle = """
 QWidget{
-background-color: #FFE6CD;
+background-color: rgba(250, 125, 225, 60);
 }
 """
 
@@ -72,7 +75,20 @@ class PlayerWindow(QMainWindow):
         self.videoWidget = QVideoWidget()
         self.videoWidget.setStyleSheet(grayStyle)
 
-        self.videoOverlay = QLabel(self.videoWidget)
+        # appendus
+        #self.stream = VideoStream(0)
+
+        self.label = QLabel()
+
+        #self.image = self.frameToPixmap(self.stream.read(), cv2.COLOR_BGR2RGB)
+
+        #self.label.setPixmap(self.image)
+
+        #self.setCentralWidget(self.label)
+
+        #self.show()
+
+        self.videoOverlay = QLabel(self.label)
         self.videoOverlay.setStyleSheet(cremeStyle)
         self.videoOverlay.show()
 
@@ -125,48 +141,127 @@ class PlayerWindow(QMainWindow):
         controlLayout.addWidget(self.positionSlider)
 
         layout = QVBoxLayout()
-        layout.addWidget(self.videoWidget)
+        #layout.addWidget(self.videoWidget)
+
+        self.gridLayout = QGridLayout()
+        self.gridLayout.addWidget(self.label, 0, 0)
+        self.gridLayout.addWidget(self.videoOverlay, 0, 0, Qt.AlignTop | Qt.AlignLeft)
+        layout.addLayout(self.gridLayout)
+        #layout.addWidget(self.label)
+
+        self.currentImage = None
+
         layout.addLayout(controlLayout)
         layout.addWidget(self.errorLabel)
 
         # Set widget to contain window contents
         wid.setLayout(layout)
 
-        self.mediaPlayer.setVideoOutput(self.videoWidget)
-        self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
-        self.mediaPlayer.positionChanged.connect(self.positionChanged)
-        self.mediaPlayer.durationChanged.connect(self.durationChanged)
-        self.mediaPlayer.error.connect(self.handleError)
+        #self.mediaPlayer.setVideoOutput(self.videoWidget)
+        #self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
+        #self.mediaPlayer.positionChanged.connect(self.positionChanged)
+        #self.mediaPlayer.durationChanged.connect(self.durationChanged)
+        #self.mediaPlayer.error.connect(self.handleError)
 
     def openFile(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open Movie",
                 QDir.homePath())
 
+        print(QUrl.fromLocalFile(fileName))
+
         if fileName != '':
+            self.stream = VideoStream(fileName)
             self.videoWidget.setStyleSheet(darkStyle)
-            self.mediaPlayer.setMedia(
-                    QMediaContent(QUrl.fromLocalFile(fileName)))
+            self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(fileName)))
             self.playButton.setEnabled(True)
 
             self.featureWindow.setVideo(fileName)
             self.featureWindow.setFrame.connect(self.onSetFrame)
             self.featureWindow.showWidget()
 
+            self.durationChanged(self.stream.getNbFrame())
+
     @pyqtSlot(int)
     def onSetFrame(self, frameTime):
-        self.setPosition(frameTime * 1000)
+        self.setPosition(frameTime)
 
-    @pyqtSlot(int, np.ndarray)
-    def onPrintFrame(self, frameTime, frame):
-        self.setPosition(frameTime * 1000)
+    @pyqtSlot(int, np.ndarray, np.ndarray)
+    def onPrintFrame(self, frameTime, frame, box):
+        print(frameTime)
+        currentImage = self.setPosition(frameTime)
+        currentImage = cv2.cvtColor(currentImage, cv2.COLOR_BGR2BGRA)
 
-        self.videoOverlay.setPixmap(self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
-        self.videoOverlay.show()
+        cv2.imwrite('Temp.png', frame)
+        img = cv2.imread('Temp.png')
 
-        if self.imageMask == None:
-            self.imageMask = ResultWindow("Mask", self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
-        else:
-            self.imageMask.setImage(self.frameToPixmap(frame, cv2.COLOR_BGR2GRAY))
+        # read image
+        #ht, wd, cc = img.shape
+
+        # create new image of desired size and color (blue) for padding
+        wd = box[2]
+        ht = box[3]
+        #color = (0,0,0)
+        #result = np.full((hh,ww, cc), color, dtype=np.uint8)
+
+        # compute center offset
+        xx = box[0]
+        yy = box[1]
+
+        """
+        tmp = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _,alpha = cv2.threshold(tmp,0,255,cv2.THRESH_BINARY)
+        b, g, r = cv2.split(img)
+        rgba = [b,g,r, alpha]
+        dst = cv2.merge(rgba,4)
+        """
+
+        # copy img image into center of result image
+        #currentImage[yy:yy+ht, xx:xx+wd] = frame
+        #currentImage[xx:xx+img.shape[0], yy:yy+img.shape[1]] = img
+        self.rgb_weights = [0.2989, 0.5870, 0.1140]
+        grayscale_image = np.dot(img[...,:3], self.rgb_weights)
+
+        colors = visualize.random_colors(1)
+        print(colors)
+
+        alpha = 0.5
+
+        for c in range(3):
+            currentImage[:, :, c] = np.where(grayscale_image > 0.2, currentImage[:, :, c] * (1 - alpha) + alpha * colors[0][c] * 255, currentImage[:, :, c])
+
+        #currentImage[0:img.shape[0], 0:img.shape[1]] = img
+        #masked_image = currentImage.astype(np.uint32).copy()
+        #colors =  visualize.random_colors(3)
+        #masked_image = visualize.apply_mask(masked_image, frame, np.asarray(colors))
+        #currentImage[xx:xx+wd, yy:yy+ht] = img
+
+        
+        self.label.setPixmap(self.frameToPixmap(currentImage, cv2.COLOR_BGR2RGB))
+
+
+        #black_mask = np.all(result == 0, axis=-1)
+        #alpha = np.uint8(np.logical_not(black_mask)) * 255
+        #bgra = np.dstack((result, alpha))
+        #cv2.imwrite("Temp.png", bgra)
+
+        #image = QImage('Temp.jpg')
+        #image = image.convertToFormat(QImage.Format_ARGB32)
+        #pixmap = QPixmap('Temp.png')
+        #pixmap.scaled(self.width, self.height, Qt.KeepAspectRatio) 
+
+        
+        #self.videoOverlay.setPixmap(pixmap)
+        #styleSheet = "QWidget{ padding: " + str(box[0]) + " " + str(box[1]) + "0 0;}"
+        #self.videoOverlay.setStyleSheet(styleSheet)
+        #self.videoOverlay.move(box[0], box[1])
+        #self.gridLayout.setHorizontalSpacing(box[0])
+        #self.gridLayout.setVerticalSpacing(box[1])
+        #self.videoOverlay.show()
+
+        #if self.imageMask == None:
+        #    self.imageMask = ResultWindow("Mask", pixmap)
+        #else:
+        #    self.imageMask.setImage(pixmap)
 
         plt.imshow(frame, cmap=plt.cm.binary)
         plt.show()
@@ -175,12 +270,23 @@ class PlayerWindow(QMainWindow):
         sys.exit(app.exec_())
 
     def play(self):
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.mediaPlayer.pause()
+        if self.stream.isPlaying():
+            self.stream.pause()
         else:
-            self.mediaPlayer.play()
+            self.stream.resume()
+            QTimer.singleShot(0, self.printImage)
 
-        self.videoOverlay.hide()
+        #self.videoOverlay.hide()
+
+    def printImage(self):
+        if self.stream.isPlaying():
+            if self.stream.readyRead():
+                self.currentImage = self.stream.read()
+                self.label.setPixmap(self.frameToPixmap(self.currentImage, cv2.COLOR_BGR2RGB))
+                self.positionChanged(self.stream.frameReaded())
+                QTimer.singleShot(self.stream.getFps(), self.printImage)
+            else:
+                QTimer.singleShot(0, self.printImage)
 
     def mediaStateChanged(self, state):
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
@@ -190,24 +296,32 @@ class PlayerWindow(QMainWindow):
             self.playButton.setIcon(
                     self.style().standardIcon(QStyle.SP_MediaPlay))
 
-        self.videoOverlay.hide()
+        #self.videoOverlay.hide()
 
     def positionChanged(self, position):
         self.positionSlider.setValue(position)
 
-        self.videoOverlay.hide()
+        #self.videoOverlay.hide()
 
     def durationChanged(self, duration):
         print(duration)
         self.positionSlider.setRange(0, duration)
 
-        self.videoOverlay.hide()
+        #self.videoOverlay.hide()
 
     def setPosition(self, position):
         print(position)
-        self.mediaPlayer.setPosition(position)
+        self.stream.setPos(position)
+    
+        while self.stream.readyRead() == False:
+            time.sleep(0)
 
-        self.videoOverlay.hide()
+        self.currentImage = self.stream.read()
+        self.label.setPixmap(self.frameToPixmap(self.currentImage, cv2.COLOR_BGR2RGB))
+
+        return self.currentImage
+
+        #self.videoOverlay.hide()
 
     def handleError(self):
         self.playButton.setEnabled(False)
