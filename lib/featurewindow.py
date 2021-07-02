@@ -4,6 +4,8 @@ from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
 
 from .imagepipeline import ImagePipeline
+from .colorcircle import ColorCircleDialog
+from .openglwidget2 import GLWidget
 
 import cv2
 import time
@@ -21,6 +23,26 @@ QWidget{
 background-color: #FFE6CD;
 }
 """
+
+def rgb_to_hsv(r, g, b):
+    r, g, b = r/255.0, g/255.0, b/255.0
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    df = mx-mn
+    if mx == mn:
+        h = 0
+    elif mx == r:
+        h = (60 * ((g-b)/df) + 360) % 360
+    elif mx == g:
+        h = (60 * ((b-r)/df) + 120) % 360
+    elif mx == b:
+        h = (60 * ((r-g)/df) + 240) % 360
+    if mx == 0:
+        s = 0
+    else:
+        s = (df/mx)*100
+    v = mx*100
+    return h, s, v
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, spacing=-1):
@@ -114,11 +136,17 @@ class CustomButtom(QLabel):
     def mousePressEvent(self, event):
         self.sendText.emit(self.text())
 
+        if self.toggle:
+            self.toggle = False
+        else:
+            self.toggle = True
+
     def enterEvent(self, event):
         self.setStyleSheet(cremeStyle)
 
     def leaveEvent(self, event):
-        self.setStyleSheet(whiteStyle)
+        if self.toggle == False:
+            self.setStyleSheet(whiteStyle)
 
     #Equipement Widget definition#
     def __init__(self, text):
@@ -126,11 +154,13 @@ class CustomButtom(QLabel):
         self.setStyleSheet(whiteStyle)
         self.setText(text)
 
-class OutfitLabel(QLabel):
-    sendInfo = pyqtSignal(str, int, np.ndarray)
+        self.toggle = False
+
+class OutfitLabel(QWidget):
+    sendInfo = pyqtSignal(str, int, np.ndarray, np.ndarray)
 
     def mousePressEvent(self, event):
-        self.sendInfo.emit(self.text(), self.frameTime, self.frame)
+        self.sendInfo.emit(self.text(), self.frameTime, self.frame, self.box)
 
     def enterEvent(self, event):
         self.setStyleSheet(cremeStyle)
@@ -139,12 +169,72 @@ class OutfitLabel(QLabel):
         self.setStyleSheet(whiteStyle)
 
     #Equipement Widget definition#
-    def __init__(self, text, frameTime, frame):
+    def __init__(self, text, frameTime, frame, colors, box):
         super(OutfitLabel, self).__init__()
         self.setStyleSheet(whiteStyle)
-        self.setText(text)
+
+        sizepolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(sizepolicy)
+
         self.frameTime = frameTime
         self.frame = frame
+        self.colors = colors
+        self.box = box
+
+        self.label = QLabel(self)
+        self.colorPrinter = []
+
+        hbox = QHBoxLayout()
+
+        self.setText(text)
+        hbox.addWidget(self.label)
+
+        for x in range(len(colors)):
+            print(colors[x])
+            if not (colors[x][0] == 0 and colors[x][1] == 0 and colors[x][2] == 0):
+                label = QLabel(self)
+
+                pixmap = QPixmap(50, 50)
+                pixmap.fill(QColor(255 * colors[x][2], 255 * colors[x][1], 255 * colors[x][0]))
+
+                label.setPixmap(pixmap)
+                self.colorPrinter.append(label)
+                hbox.addWidget(label)
+
+        hbox.setContentsMargins(5, 5, 5, 5)
+        self.setLayout(hbox)
+
+        self.width = self.label.width() + 10 + len(self.colorPrinter) * 55
+        self.height = 60
+
+        self.setMinimumSize(self.width, self.height)
+
+    @pyqtSlot(list)
+    def colorSearch(self, colorList):
+        
+        showed = False
+        for color in self.colors:
+            print(color)
+
+            h, s, v = rgb_to_hsv(color[2] * 255, color[1] * 255, color[0] * 255)
+            print((color[0] * 255, color[1] * 255, color[2] * 255))
+            
+            correspondingColor = True
+            if h < colorList[0] - 10 or h > colorList[0] + 10:
+                correspondingColor = False
+
+            if correspondingColor == True:
+                self.show()
+                showed = True
+
+        if showed == False:
+            self.hide()
+
+    def setText(self, text):
+        self.label.setText(text)
+
+    def text(self):
+        return self.label.text()
 
 class ResultWidget(QWidget):
     showResult = pyqtSignal(int, list)
@@ -158,22 +248,26 @@ class ResultWidget(QWidget):
     def leaveEvent(self, event):
         self.setStyleSheet(whiteStyle)
 
-    #Equipement Widget definition#
-    def __init__(self, frameNumber, frameTime):
+    def __init__(self, frameTime, frameNumber):
         super(ResultWidget, self).__init__()
 
         self.frameNumber = frameNumber
         self.frameTime = frameTime
 
         self.imageList = [] 
+        self.labelList = []
+        self.searchList = []
 
         self.initUI()
 
     def initUI(self):
+        sizepolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(sizepolicy)
+
         self.fillWidget = QWidget(self)
-        frameTimeSecond = int(self.frameTime % 60)
-        frameTimeMinute = int(self.frameTime / 60)
-        frameNumberLabel = QLabel("Frame number: {}".format(self.frameNumber))
+        frameTimeSecond = int(self.frameNumber % 60)
+        frameTimeMinute = int(self.frameNumber / 60)
+        frameNumberLabel = QLabel("Frame number: {}".format(self.frameTime))
         frameTimeLabel = QLabel("Frame time: {}:{}".format(frameTimeMinute, frameTimeSecond))
 
         hBox = QHBoxLayout()
@@ -185,13 +279,42 @@ class ResultWidget(QWidget):
         layout = QVBoxLayout()
         layout.addLayout(hBox)
         layout.addLayout(self.flowLayout)
-        layout.addStretch()
+
+        self.setMinimumSize(250, len(self.imageList) * 70 + 40)
 
         self.fillWidget.setLayout(layout)
 
-    def addWidget(self, widget, image):
+    def addWidget(self, widget, image, label):
         self.imageList.append(image)
         self.flowLayout.addWidget(widget)
+
+        if label not in self.labelList:
+            self.labelList.append(label)
+
+        self.setMinimumSize(250, len(self.imageList) * 70 + 40)
+
+    def getLabelList(self):
+        return self.labelList
+
+    @pyqtSlot(str, bool)
+    def onSearchWidget(self, searchString, status):
+        if status == True:
+            self.searchList.append(searchString)
+        else:
+            self.searchList.remove(searchString)
+
+        if self.searchList == []:
+            self.show()
+        else:
+            res = all(elem in self.labelList for elem in self.searchList)
+
+            if res:
+                self.show()
+            else:
+                self.hide()
+    
+    def appendInSearchList(self, key):
+        self.searchList.append(key)
 
 class ResultHolder(QScrollArea):
     """docstring for ResultHolder"""
@@ -208,6 +331,7 @@ class ResultHolder(QScrollArea):
         self.setWidgetResizable(True)
 
         self.setBackgroundRole(QPalette.Light)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.mainWidget = QWidget()
         self.setWidget(self.mainWidget)
@@ -217,6 +341,9 @@ class ResultHolder(QScrollArea):
 
     def appendWidget(self, widget):
         self.layout.addWidget(widget)
+
+    def appendItem(self, item):
+        self.layout.addItem(item)
 
     def clear(self):
         while self.layout.count():
@@ -234,7 +361,10 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
     #Signals#
     createResultWidget = pyqtSignal(list)
     setFrame = pyqtSignal(int)
-    printFrame = pyqtSignal(int, np.ndarray)
+    printFrame = pyqtSignal(int, np.ndarray, np.ndarray)
+    searchWidget = pyqtSignal(str, bool)
+    searchColor = pyqtSignal(list)
+    avatarColor = pyqtSignal(list)
 
     def __init__(self, title):
         super(FeatureWindow, self).__init__()
@@ -249,6 +379,8 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
         self.searchLayout = FlowLayout()
         self.searchList = []
+
+        self.searchDict = {}
 
         self.initUI()
 
@@ -276,13 +408,36 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         hBox2.addWidget(searchText)
         hBox2.addWidget(searchEdit)
 
+        self.colorWheel = ColorCircleDialog()
+        self.colorWheel.currentColorChanged.connect(self.onColorModified)
+
+        self.avatarWidget = GLWidget()
+        self.avatarColor.connect(self.avatarWidget.changeColor)
+
+        hBox3 = QHBoxLayout()
+        vBox2 = QVBoxLayout()
+
+        topButton = QPushButton("Top")
+        bottomButton = QPushButton("Bottom")
+        
+        topButton.clicked.connect(self.avatarWidget.topSelected)
+        bottomButton.clicked.connect(self.avatarWidget.bottomSelected)
+
+        vBox2.addWidget(topButton)
+        vBox2.addWidget(bottomButton)
+        vBox2.addStretch()
+        hBox3.addLayout(vBox2)
+        hBox3.addWidget(self.colorWheel)
+
         vBox = QVBoxLayout()
 
         vBox.addLayout(hBox)
         vBox.addWidget(runButton)
         vBox.addLayout(hBox2)
         vBox.addLayout(self.searchLayout)
-        vBox.addStretch()
+        vBox.addLayout(hBox3)
+        vBox.addWidget(self.avatarWidget)
+        #vBox.addStretch()
 
         self.resultHolder = ResultHolder()
 
@@ -305,7 +460,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
     @pyqtSlot()
     def startAnalyse(self):
         if self.running == False:
-            self.threadAnalyse = threading.Thread(target = self.analyse)#Lance le thread cycleThread
+            self.threadAnalyse = threading.Thread(target = self.analyse) # Lance le thread cycleThread
             self.threadAnalyse.start()
 
     def stopAnalyse(self):
@@ -346,13 +501,14 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
                 for x in range(len(result[0])):
                     topBodyPrediction = [result[0][x]['prediction'][0][0], 0, result[0][x]['prediction'][0][2], result[0][x]['prediction'][0][3], result[0][x]['prediction'][0][4], 0, result[0][x]['prediction'][0][6]]
 
-                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[0][x]['image']))
+                    print("top")
+                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[0][x]['image'], result[0][x]['color'], result[0][x]['box']))
 
                 #Bottom Result
                 for x in range(len(result[1])):
-                    bottomBodyPrediction = [0, result[1][x]['prediction'][0][1], 0, 0, 0, 0, result[1][x]['prediction'][0][6]]
+                    print("bottom")
 
-                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[1][x]['image']))
+                    resultWidget.append(('Trouser', result[1][x]['image'], result[1][x]['color'], result[1][x]['box']))
 
                 if resultWidget != None:
                     self.createResultWidget.emit(resultWidget)
@@ -372,6 +528,10 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         widgetInit = widgetInfo[0]
         resultWidget = ResultWidget(widgetInit[0], widgetInit[1])
 
+        for key in self.searchDict:
+            if self.searchDict[key]:
+                resultWidget.appendInSearchList(key)
+
         for x in range(len(widgetInfo)):
             if x == 0:
                 pass
@@ -379,22 +539,44 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
                 if widgetInfo[x][0] not in self.searchList:
                     self.searchList.append(widgetInfo[x][0])
                     button = CustomButtom(widgetInfo[x][0])
+                    button.sendText.connect(self.onSearchLabelClicked)
                     self.searchLayout.addWidget(button)
+                    self.searchDict[widgetInfo[x][0]] = False
 
-                label = OutfitLabel(widgetInfo[x][0], widgetInit[1], widgetInfo[x][1])
+                label = OutfitLabel(widgetInfo[x][0], widgetInit[0], widgetInfo[x][1], widgetInfo[x][2], widgetInfo[x][3])
                 label.sendInfo.connect(self.onOutfitLabelClicked)
-                resultWidget.addWidget(label, widgetInfo[x][1])
+                self.searchColor.connect(label.colorSearch)
+                resultWidget.addWidget(label, widgetInfo[x][1], widgetInfo[x][0])
 
         self.resultHolder.appendWidget(resultWidget)
+        #self.resultHolder.appendItem(QSpacerItem(100, 20, QSizePolicy.Minimum, QSizePolicy.Expanding))
         resultWidget.showResult.connect(self.onWidgetClicked)
+        self.searchWidget.connect(resultWidget.onSearchWidget)
+
+    @pyqtSlot(QColor)
+    def onColorModified(self, color):
+        self.searchColor.emit([color.hue(), color.saturation(), color.value()])
+        self.avatarColor.emit([color.red() / 255, color.green() / 255, color.blue() / 255])
 
     @pyqtSlot(int, list)
     def onWidgetClicked(self, frameNumber):
         self.setFrame.emit(frameNumber)
 
-    @pyqtSlot(str, int, np.ndarray)
-    def onOutfitLabelClicked(self, string, frameNumber, frame):
-        self.printFrame.emit(frameNumber, frame)
+    @pyqtSlot(str, int, np.ndarray, np.ndarray)
+    def onOutfitLabelClicked(self, string, frameNumber, frame, box):
+        self.printFrame.emit(frameNumber, frame, box)
+
+    @pyqtSlot(str)
+    def onSearchLabelClicked(self, itemSearch):
+        print(itemSearch)
+        if self.searchDict[itemSearch] == False:
+            self.searchDict[itemSearch] = True
+
+            self.searchWidget.emit(itemSearch, True)
+        else:
+            self.searchDict[itemSearch] = False
+
+            self.searchWidget.emit(itemSearch, False)
 
     def setCustomWidget(self, widget):
         self.setCentralWidget(widget)

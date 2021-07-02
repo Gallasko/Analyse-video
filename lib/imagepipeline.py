@@ -20,8 +20,9 @@ import mrcnn.model as modellib
 from mrcnn import visualize
 
 # Import COCO config
-sys.path.append(os.path.join(ROOT_DIR, "coco/"))  # To find local version
-import coco
+#sys.path.append(os.path.join(ROOT_DIR, "coco/"))  # To find local version
+#import coco
+from .coco import CocoConfig
 
 import matplotlib.image as mpimg 
 import matplotlib.pyplot as plt 
@@ -47,6 +48,21 @@ print(COCO_MODEL_PATH)
 if not os.path.exists(COCO_MODEL_PATH):
     utils.download_trained_weights(COCO_MODEL_PATH)
 
+def rgb2ycbcr(im):
+    xform = np.array([[.299, .587, .114], [-.1687, -.3313, .5], [.5, -.4187, -.0813]])
+    ycbcr = im.dot(xform.T)
+    ycbcr[:,:,[1,2]] += 128
+    return np.uint8(ycbcr)
+
+def ycbcr2rgb(im):
+    xform = np.array([[1, 0, 1.402], [1, -0.34414, -.71414], [1, 1.772, 0]])
+    rgb = im.astype(np.float)
+    rgb[:,:,[1,2]] -= 128
+    rgb = rgb.dot(xform.T)
+    np.putmask(rgb, rgb > 255, 255)
+    np.putmask(rgb, rgb < 0, 0)
+    return np.uint8(rgb)
+
 print(tf.executing_eagerly())
 
 def bbox2(img):
@@ -56,7 +72,7 @@ def bbox2(img):
     xmin, xmax = np.where(cols)[0][[0, -1]]
     return img[ymin:ymax+1, xmin:xmax+1]
 
-class InferenceConfig(coco.CocoConfig):
+class InferenceConfig(CocoConfig):
     # Set batch size to 1 since we'll be running inference on
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
@@ -107,6 +123,8 @@ class ImagePipeline():
 
         self.bpModel = load_model("bodyPixModel", 16, 'mobilenet_v1')
 
+        """
+        #FashionMnist Training
         fashion_mnist = tf.keras.datasets.fashion_mnist
 
         (self.train_images, self.train_labels), (self.test_images, self.test_labels) = fashion_mnist.load_data()
@@ -121,7 +139,12 @@ class ImagePipeline():
                                 loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
                                 metrics=['accuracy'])
 
-        self.mnistModel.fit(self.train_images, self.train_labels, epochs=10)
+        self.mnistModel.fit(self.train_images, self.train_labels, epochs=1000)
+
+        self.mnistModel.save('mnistModel')
+        """
+
+        self.mnistModel = tf.keras.models.load_model('mnistModel')
 
         self.probability_model = tf.keras.Sequential([self.mnistModel, tf.keras.layers.Softmax()])
     
@@ -131,6 +154,11 @@ class ImagePipeline():
 
         # Visualize results
         r = rcnnResults[0]
+
+        #bboxes = utils.extract_bboxes(r['masks'])
+        bboxes = r["rois"]
+
+        #visualize.draw_boxes(image, r['rois'], masks=)
         #visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'], class_names, r['scores'])
 
         bpPartNames = [['left_upper_arm_front', 'left_upper_arm_back', 'right_upper_arm_front', 'right_upper_arm_back', 'left_lower_arm_front', 'left_lower_arm_back', 'right_lower_arm_front', 'right_lower_arm_back', 'torso_front', 'torso_back'], 
@@ -139,6 +167,7 @@ class ImagePipeline():
         forwardResults = []
 
         for partNames in bpPartNames:
+            nbBox = 0
             bpResult = self.bpModel.predict_single(image)
 
             tempResult = bpResult.get_mask(threshold=0.65)
@@ -181,6 +210,7 @@ class ImagePipeline():
                         grayscale_image = np.dot(croppedImage[...,:3], self.rgb_weights)
 
                         #predominant color extraction
+                        dominant_colors = [] 
                         red = [] 
                         green = [] 
                         blue = [] 
@@ -190,37 +220,38 @@ class ImagePipeline():
                                 green.append(temp_g) 
                                 blue.append(temp_b) 
                         
-                        image_df = pd.DataFrame({'red' : red, 
-                                                'green' : green, 
-                                                'blue' : blue}) 
-                        
-                        image_df['scaled_color_red'] = whiten(image_df['red']) 
-                        image_df['scaled_color_blue'] = whiten(image_df['blue']) 
-                        image_df['scaled_color_green'] = whiten(image_df['green']) 
-                        
-                        cluster_centers, _ = kmeans(image_df[['scaled_color_red', 
-                                                            'scaled_color_blue', 
-                                                            'scaled_color_green']], 4) 
-                        
-                        dominant_colors = [] 
-                        
-                        red_std, green_std, blue_std = image_df[['red', 
-                                                                'green', 
-                                                                'blue']].std() 
-                        
-                        for cluster_center in cluster_centers: 
-                            red_scaled, green_scaled, blue_scaled = cluster_center 
-                            dominant_colors.append(( 
-                                red_scaled * red_std / 255, 
-                                green_scaled * green_std / 255, 
-                                blue_scaled * blue_std / 255
-                            ))
+                        if (len(red) > 0 and len(green) > 0 and len(blue) > 0):
+                            image_df = pd.DataFrame({'red' : red, 
+                                                    'green' : green, 
+                                                    'blue' : blue}) 
 
-                        modelResults = {"image": grayscale_image, "color": [dominant_colors]}
+                            if(len(image_df['red']) > 4 and len(image_df['blue']) > 4 and len(image_df['green']) > 4):
+                                image_df['scaled_color_red'] = whiten(image_df['red']) 
+                                image_df['scaled_color_blue'] = whiten(image_df['blue']) 
+                                image_df['scaled_color_green'] = whiten(image_df['green']) 
+                                
+                                cluster_centers, _ = kmeans(image_df[['scaled_color_red', 
+                                                                    'scaled_color_blue', 
+                                                                    'scaled_color_green']], 4) 
+                                
+                                red_std, green_std, blue_std = image_df[['red', 
+                                                                        'green', 
+                                                                        'blue']].std() 
+                                
+                                for cluster_center in cluster_centers: 
+                                    red_scaled, green_scaled, blue_scaled = cluster_center 
+                                    dominant_colors.append(( 
+                                        red_scaled * red_std / 255, 
+                                        green_scaled * green_std / 255, 
+                                        blue_scaled * blue_std / 255
+                                    ))
+
+                        modelResults = {"image": final2, "color": dominant_colors, "box": bboxes[nbBox], "gray": grayscale_image}
                         bodyMasks.append(modelResults)
+                nbBox += 1
 
             for res in bodyMasks:
-                res['rescaled_image'] = cv2.resize(res['image'], dsize=(28, 28), interpolation=cv2.INTER_CUBIC)
+                res['rescaled_image'] = cv2.resize(res['gray'], dsize=(28, 28), interpolation=cv2.INTER_CUBIC)
 
                 arr = np.asarray(res['rescaled_image'][None, ...])
                 res['prediction'] = self.probability_model.predict(arr)
