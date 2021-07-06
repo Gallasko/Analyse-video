@@ -83,6 +83,7 @@ class App(QWidget):
 
 class GLWidget(QOpenGLWidget):
     clicked = pyqtSignal()
+    selectedAvatar = pyqtSignal(list, str)
 
     def __init__(self, parent=None):
         super(GLWidget, self).__init__(parent)
@@ -111,7 +112,12 @@ class GLWidget(QOpenGLWidget):
         for i in range(10):
             self.colors.append(QtGui.QVector4D(0.0, 0.0, 0.0, 1.0))
 
-        self.selected = "Top"
+        self.colors2 = []
+
+        for i in range(10):
+            self.colors2.append(QtGui.QVector4D(0.0, 0.0, 0.0, 1.0))
+
+        self.selected = "1 Color"
         self.selectedCloth = 0
         self.selectedTop = 0
         self.selectedBottom = 6
@@ -148,32 +154,25 @@ class GLWidget(QOpenGLWidget):
 
     @pyqtSlot(list)
     def changeColor(self, colors):
-        '''
-        if(self.selected == "Top"):
-            self.topColorsVector.setX(colors[0])
-            self.topColorsVector.setY(colors[1])
-            self.topColorsVector.setZ(colors[2])
-
-        if(self.selected == "Bottom"):
-            self.bottomColorsVector.setX(colors[0])
-            self.bottomColorsVector.setY(colors[1])
-            self.bottomColorsVector.setZ(colors[2])
-        '''
-
-        self.colors[self.selectedCloth].setX(colors[0])
-        self.colors[self.selectedCloth].setY(colors[1])
-        self.colors[self.selectedCloth].setZ(colors[2])
+        if(self.selected == "1 Color"):
+            self.colors[self.selectedCloth].setX(colors[0])
+            self.colors[self.selectedCloth].setY(colors[1])
+            self.colors[self.selectedCloth].setZ(colors[2])
+        if(self.selected == "2 Color"):
+            self.colors2[self.selectedCloth].setX(colors[0])
+            self.colors2[self.selectedCloth].setY(colors[1])
+            self.colors2[self.selectedCloth].setZ(colors[2])
 
         self.update()
         self.paintGL()
 
     @pyqtSlot()
     def topSelected(self):
-        self.selected = "Top"
+        self.selected = "1 Color"
 
     @pyqtSlot()
     def bottomSelected(self):
-        self.selected = "Bottom"
+        self.selected = "2 Color"
     
     def getOpenglInfo(self):
         info = """
@@ -546,6 +545,7 @@ class GLWidget(QOpenGLWidget):
                 toScreen[1] <= texCoord[2] and
                 toScreen[1] >= texCoord[3]):
                 self.selectedCloth = x
+                self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], "TODO l 548")
                 if x <= 5:
                     self.selectedTop = x
                     self.topTexture = self.textures[x]

@@ -10,6 +10,7 @@ from .openglwidget2 import GLWidget
 import cv2
 import time
 import numpy as np
+import math
 import threading
 
 whiteStyle = """
@@ -23,6 +24,8 @@ QWidget{
 background-color: #FFE6CD;
 }
 """
+
+#TODO multiples personnes detection across 2 or 3 frames
 
 def rgb_to_hsv(r, g, b):
     r, g, b = r/255.0, g/255.0, b/255.0
@@ -44,6 +47,138 @@ def rgb_to_hsv(r, g, b):
     v = mx*100
     return h, s, v
 
+def rgb_to_l(r, g, b):
+    r, g, b = r/255.0, g/255.0, b/255.0
+
+    if r <= 0.03928:
+        r = r / 12.92
+    else:
+        r = ((r + 0.055) / 1.055) ** 2.4
+
+    if g <= 0.03928:
+        g = g / 12.92
+    else:
+        g = ((g + 0.055) / 1.055) ** 2.4
+
+    if b <= 0.03928:
+        b = b / 12.92
+    else:
+        b = ((b + 0.055) / 1.055) ** 2.4
+
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b)
+
+def rgb_to_xyz(r, g, b):
+    r, g, b = r/255.0, g/255.0, b/255.0
+
+    if r <= 0.03928:
+        r = r / 12.92
+    else:
+        r = ((r + 0.055) / 1.055) ** 2.4
+
+    if g <= 0.03928:
+        g = g / 12.92
+    else:
+        g = ((g + 0.055) / 1.055) ** 2.4
+
+    if b <= 0.03928:
+        b = b / 12.92
+    else:
+        b = ((b + 0.055) / 1.055) ** 2.4
+
+    r, g, b, = r * 100, g * 100, b * 100
+
+    x = r * 0.4124 + g * 0.3576 + b * 0.1805
+    y = r * 0.2126 + g * 0.7152 + b * 0.0722
+    z = r * 0.0193 + g * 0.1192 + b * 0.9505
+
+    return x, y, z
+
+def xyz_to_lab(x, y, z):
+    REF_X = 95.047
+    REF_Y = 100.000
+    REF_Z = 108.883
+    x, y, z = x/REF_X, y/REF_Y, z/REF_Z
+
+    if x > 0.008856:
+        x = x ** 0.3333333
+    else:
+        x = (7.787 * x) + (16.0 / 116.0)
+
+    if y > 0.008856:
+        y = y ** 0.3333333
+    else:
+        y = (7.787 * y) + (16.0 / 116.0)
+
+    if z > 0.008856:
+        z = z ** 0.3333333
+    else:
+        z = (7.787 * z) + (16.0 / 116.0)
+
+    l = (116.0 * y) - 16.0
+    a = 500.0 * (x - y)
+    b = 200.0 * (y - z)
+
+    return l, a, b
+
+def lab_to_lch(l, a, b):
+    l = l
+    c = math.sqrt((a * a) + (b * b))
+    h = math.atan2(b, a)
+
+    return l, c, h
+
+def deltaColor(rgbTuple1, rgbTuple2):
+    r1, g1, b1 = rgbTuple1
+    r2, g2, b2 = rgbTuple2    
+
+    x1, y1, z1 = rgb_to_xyz(r1, g1, b1)
+    l1, a1, b1 = xyz_to_lab(x1, y1, z1)
+    l1, c1, h1 = lab_to_lch(l1, a1, b1)
+
+    x2, y2, z2 = rgb_to_xyz(r2, g2, b2)
+    l2, a2, b2 = xyz_to_lab(x2, y2, z2)
+    l2, c2, h2 = lab_to_lch(l2, a2, b2)
+
+    avg_L = ( l1 + l2 ) * 0.5
+    delta_L = l1 - l2
+    avg_C = ( c1 + c2 ) * 0.5
+    delta_C = c1 - c2
+    avg_H = ( h1 + h2 ) * 0.5
+
+    CV_PI = np.pi
+
+    if( math.fabs( h1 - h2 ) > CV_PI ):
+        avg_H += CV_PI
+
+    delta_H = h1 - h2
+    if( math.fabs( delta_H ) > CV_PI ):
+        if( h1 <= h2 ):
+            delta_H += CV_PI * 2.0
+        else:
+            delta_H -= CV_PI * 2.0
+
+    delta_H = math.sqrt( c1 * c2 ) * math.sin( delta_H ) * 2.0
+    T = 1.0 - \
+            0.17 * math.cos( avg_H - CV_PI / 6.0 ) + \
+            0.24 * math.cos( avg_H * 2.0 ) + \
+            0.32 * math.cos( avg_H * 3.0 + CV_PI / 30.0 ) - \
+            0.20 * math.cos( avg_H * 4.0 - CV_PI * 7.0 / 20.0 )
+    SL = avg_L - 50.0
+    SL *= SL
+    SL = SL * 0.015 / math.sqrt( SL + 20.0 ) + 1.0
+    SC = avg_C * 0.045 + 1.0
+    SH = avg_C * T * 0.015 + 1.0
+    delta_Theta = avg_H / 25.0 - CV_PI * 11.0 / 180.0
+    delta_Theta = math.exp( delta_Theta * -delta_Theta ) * ( CV_PI / 6.0 )
+    RT = math.pow( avg_C, 7.0 )
+    RT = math.sqrt( RT / ( RT + 6103515625.0 ) ) * math.sin( delta_Theta ) * -2.0#; // 6103515625 = 25^7
+
+    delta_L /= SL
+    delta_C /= SC
+    delta_H /= SH
+
+    return math.sqrt( delta_L * delta_L + delta_C * delta_C + delta_H * delta_H + RT * delta_C * delta_H )
+
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, spacing=-1):
         super(FlowLayout, self).__init__(parent)
@@ -51,7 +186,7 @@ class FlowLayout(QLayout):
         if parent is not None:
             self.setContentsMargins(margin, margin, margin, margin)
 
-        self.setSpacing(spacing)
+        self.setSpacing(10)
 
         self.itemList = []
 
@@ -130,6 +265,9 @@ class FlowLayout(QLayout):
 
         return y + lineHeight - rect.y()
 
+    def getWidgetList(self):
+        return self.itemList
+
 class CustomButtom(QLabel):
     sendText = pyqtSignal(str)
 
@@ -158,6 +296,7 @@ class CustomButtom(QLabel):
 
 class OutfitLabel(QWidget):
     sendInfo = pyqtSignal(str, int, np.ndarray, np.ndarray)
+    changed = pyqtSignal()
 
     def mousePressEvent(self, event):
         self.sendInfo.emit(self.text(), self.frameTime, self.frame, self.box)
@@ -173,13 +312,14 @@ class OutfitLabel(QWidget):
         super(OutfitLabel, self).__init__()
         self.setStyleSheet(whiteStyle)
 
-        sizepolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setSizePolicy(sizepolicy)
+        #sizepolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        #self.setSizePolicy(sizepolicy)
 
         self.frameTime = frameTime
         self.frame = frame
         self.colors = colors
         self.box = box
+        self.showed = True
 
         self.label = QLabel(self)
         self.colorPrinter = []
@@ -209,26 +349,51 @@ class OutfitLabel(QWidget):
 
         self.setMinimumSize(self.width, self.height)
 
+        self.show()
+
     @pyqtSlot(list)
     def colorSearch(self, colorList):
-        
-        showed = False
+        self.showed = False
         for color in self.colors:
-            print(color)
+            #print(color)
 
             h, s, v = rgb_to_hsv(color[2] * 255, color[1] * 255, color[0] * 255)
-            print((color[0] * 255, color[1] * 255, color[2] * 255))
+            l = rgb_to_l(color[2] * 255, color[1] * 255, color[0] * 255)
+            l2 = rgb_to_l(colorList[0], colorList[1], colorList[2])
+
+            deltaC = deltaColor((color[2] * 255, color[1] * 255, color[0] * 255), (colorList[0], colorList[1], colorList[2]))
+            if l < l2:
+                contrastRatio = (l + 0.05) / (l2 + 0.05)
+            else:
+                contrastRatio = (l2 + 0.05) / (l + 0.05)
+
+            #print(l, l2, contrastRatio)
+            #print((color[0] * 255, color[1] * 255, color[2] * 255))
             
             correspondingColor = True
-            if h < colorList[0] - 10 or h > colorList[0] + 10:
+            #if h < colorList[0] - 10 or h > colorList[0] + 10:
+            if deltaC > 15.0:
                 correspondingColor = False
 
             if correspondingColor == True:
+                self.setMinimumSize(self.width, self.height)
                 self.show()
-                showed = True
+                self.showed = True
 
-        if showed == False:
+        if self.showed == False:
+            self.setMinimumSize(0, 0)
             self.hide()
+
+        self.changed.emit()
+
+    @pyqtSlot()
+    def resetWidget(self):
+        if self.showed == False:
+            self.setMinimumSize(self.width, self.height)
+            self.showed = True
+            self.show()
+
+            self.changed.emit()
 
     def setText(self, text):
         self.label.setText(text)
@@ -236,10 +401,18 @@ class OutfitLabel(QWidget):
     def text(self):
         return self.label.text()
 
+    def isVisible(self):
+        if(self.showed):
+            return True
+        else:
+            return False
+        #return self.showed
+
 class ResultWidget(QWidget):
     showResult = pyqtSignal(int, list)
 
     def mousePressEvent(self, event):
+        print(self.renderList)
         self.showResult.emit(self.frameTime, self.imageList)
 
     def enterEvent(self, event):
@@ -257,6 +430,8 @@ class ResultWidget(QWidget):
         self.imageList = [] 
         self.labelList = []
         self.searchList = []
+        self.widgetList = []
+        self.renderList = []
 
         self.initUI()
 
@@ -274,24 +449,35 @@ class ResultWidget(QWidget):
         hBox.addWidget(frameNumberLabel)
         hBox.addWidget(frameTimeLabel)
 
-        self.flowLayout = FlowLayout()
+        self.flowLayout = QVBoxLayout()
 
         layout = QVBoxLayout()
         layout.addLayout(hBox)
         layout.addLayout(self.flowLayout)
 
-        self.setMinimumSize(250, len(self.imageList) * 70 + 40)
+        #print(self.nbVisibleWidget(), len(self.imageList))
+
+        self.setMinimumSize(250, len(self.renderList) * 70 + 40)
+        #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
+        #self.setMaximumSize(250, self.nbVisibleWidget() * 70 + 40)
 
         self.fillWidget.setLayout(layout)
 
     def addWidget(self, widget, image, label):
         self.imageList.append(image)
+        self.widgetList.append(widget)
         self.flowLayout.addWidget(widget)
+        widget.changed.connect(self.onWidgetChanged)
 
         if label not in self.labelList:
             self.labelList.append(label)
 
+        #print(self.nbVisibleWidget(), len(self.imageList))
+
         self.setMinimumSize(250, len(self.imageList) * 70 + 40)
+
+        #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
+        #self.setMaximumSize(250, self.nbVisibleWidget() * 70 + 40)
 
     def getLabelList(self):
         return self.labelList
@@ -313,6 +499,30 @@ class ResultWidget(QWidget):
             else:
                 self.hide()
     
+    @pyqtSlot()
+    def onWidgetChanged(self):
+        self.renderList = []
+
+        for widget in self.widgetList:
+            if widget.isVisible():
+                self.renderList.append(widget)
+
+        #del self.flowLayout
+        #self.flowLayout = FlowLayout()
+        #self.flowLayout.clear()
+        #del self.flowLayout
+        #self.flowLayout = QVBoxLayout()
+
+        self.setMinimumSize(250, len(self.renderList) * 70 + 40)
+
+        #for widget in self.renderList:
+        #    self.flowLayout.addWidget(widget)
+
+        #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
+
+        #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
+        #self.setMaximumSize(250, self.nbVisibleWidget() * 70 + 40)
+
     def appendInSearchList(self, key):
         self.searchList.append(key)
 
@@ -413,18 +623,21 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
         self.avatarWidget = GLWidget()
         self.avatarColor.connect(self.avatarWidget.changeColor)
+        self.avatarWidget.selectedAvatar.connect(self.avatarChanged)
 
         hBox3 = QHBoxLayout()
         vBox2 = QVBoxLayout()
 
-        topButton = QPushButton("Top")
-        bottomButton = QPushButton("Bottom")
+        topButton = QPushButton("1st Color")
+        bottomButton = QPushButton("2nd Color")
+        self.resetButton = QPushButton("Reset")
         
         topButton.clicked.connect(self.avatarWidget.topSelected)
         bottomButton.clicked.connect(self.avatarWidget.bottomSelected)
 
         vBox2.addWidget(topButton)
         vBox2.addWidget(bottomButton)
+        vBox2.addWidget(self.resetButton)
         vBox2.addStretch()
         hBox3.addLayout(vBox2)
         hBox3.addWidget(self.colorWheel)
@@ -546,6 +759,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
                 label = OutfitLabel(widgetInfo[x][0], widgetInit[0], widgetInfo[x][1], widgetInfo[x][2], widgetInfo[x][3])
                 label.sendInfo.connect(self.onOutfitLabelClicked)
                 self.searchColor.connect(label.colorSearch)
+                self.resetButton.clicked.connect(label.resetWidget)
                 resultWidget.addWidget(label, widgetInfo[x][1], widgetInfo[x][0])
 
         self.resultHolder.appendWidget(resultWidget)
@@ -555,7 +769,8 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
     @pyqtSlot(QColor)
     def onColorModified(self, color):
-        self.searchColor.emit([color.hue(), color.saturation(), color.value()])
+        #self.searchColor.emit([color.hue(), color.saturation(), color.value()])
+        self.searchColor.emit([color.red(), color.green(), color.blue()])
         self.avatarColor.emit([color.red() / 255, color.green() / 255, color.blue() / 255])
 
     @pyqtSlot(int, list)
@@ -577,6 +792,10 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
             self.searchDict[itemSearch] = False
 
             self.searchWidget.emit(itemSearch, False)
+
+    @pyqtSlot(list, str)
+    def avatarChanged(self, color, clothType):
+        self.searchColor.emit([color[0], color[1], color[2]])
 
     def setCustomWidget(self, widget):
         self.setCentralWidget(widget)
