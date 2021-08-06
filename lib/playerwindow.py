@@ -52,7 +52,23 @@ background-color: rgba(250, 125, 225, 60);
 }
 """
 
+#sliderStyle = """
+#* {color: qlineargradient(spread:pad, x1:0 y1:0, x2:1 y2:0, stop:0 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));
+#"""
+#background: qlineargradient( x1:0 y1:0, x2:0.5 y2:0, x3:1 y3:0, stop:0 cyan, stop:1 blue, stop 2 red);}
+#"""
+
+sliderStyle = """
+background: qlineargradient( x1:0 y1:0, x2:1 y2:0, stop:0 red, stop:0.05 red, stop:0.1 yellow, stop:0.15 green, stop:0.2 green, stop:0.3 green, stop:0.4 green, stop:0.55 green, stop:0.6 yellow, stop:0.65 red, stop:1 red);
+"""
+
 import numpy as np
+
+def boolToColor(bool):
+    if(bool):
+        return "green"
+    else:
+        return "red"
 
 class PlayerWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -71,6 +87,7 @@ class PlayerWindow(QMainWindow):
 
         self.featureWindow = FeatureWindow("List of Features")
         self.featureWindow.printFrame.connect(self.onPrintFrame)
+        self.featureWindow.sendVisibleList.connect(self.onReceiveVisibleList)
 
         self.videoWidget = QVideoWidget()
         self.videoWidget.setStyleSheet(grayStyle)
@@ -184,6 +201,36 @@ class PlayerWindow(QMainWindow):
     @pyqtSlot(int)
     def onSetFrame(self, frameTime):
         self.setPosition(frameTime)
+
+    @pyqtSlot(list)
+    def onReceiveVisibleList(self, visibleList):
+        sliderStyle = ""
+
+        stopLen = len(visibleList)
+
+        print(visibleList)
+
+        if stopLen > 0:
+            sliderStyle = "background: qlineargradient(x1:0 y1:0, x2:1 y2:0"
+
+            stopHelper = (1.0 / stopLen) / 3.0
+
+            for i in range(stopLen):
+                if i == 0: 
+                    sliderStyle += ", stop: {} {}".format(0, boolToColor(visibleList[i]))
+                    sliderStyle += ", stop: {} {}".format(0 + stopHelper, boolToColor(visibleList[i]))
+                elif i < stopLen - 1:
+                    currentStop = i * (1.0 / stopLen)
+                    sliderStyle += ", stop: {} {}".format(currentStop - stopHelper, boolToColor(visibleList[i]))
+                    sliderStyle += ", stop: {} {}".format(currentStop, boolToColor(visibleList[i]))
+                    sliderStyle += ", stop: {} {}".format(currentStop + stopHelper, boolToColor(visibleList[i]))
+                elif i == stopLen - 1:
+                    sliderStyle += ", stop: {} {}".format(1 - stopHelper, boolToColor(visibleList[i]))
+                    sliderStyle += ", stop: {} {}".format(1, boolToColor(visibleList[i]))
+                    
+            sliderStyle += ");"
+
+        self.positionSlider.setStyleSheet(sliderStyle)
 
     @pyqtSlot(int, np.ndarray, np.ndarray)
     def onPrintFrame(self, frameTime, frame, box):

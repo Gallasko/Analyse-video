@@ -83,7 +83,7 @@ class App(QWidget):
 
 class GLWidget(QOpenGLWidget):
     clicked = pyqtSignal()
-    selectedAvatar = pyqtSignal(list, str)
+    selectedAvatar = pyqtSignal(list, list, str)
 
     def __init__(self, parent=None):
         super(GLWidget, self).__init__(parent)
@@ -163,6 +163,8 @@ class GLWidget(QOpenGLWidget):
             self.colors2[self.selectedCloth].setY(colors[1])
             self.colors2[self.selectedCloth].setZ(colors[2])
 
+        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+
         self.update()
         self.paintGL()
 
@@ -170,9 +172,28 @@ class GLWidget(QOpenGLWidget):
     def topSelected(self):
         self.selected = "1 Color"
 
+        self.update()
+        self.paintGL()
+
     @pyqtSlot()
     def bottomSelected(self):
         self.selected = "2 Color"
+
+        self.update()
+        self.paintGL()
+
+    @pyqtSlot()
+    def clearColor(self):
+        if self.selected == "1 Color":
+            self.colors[self.selectedCloth] = QtGui.QVector4D(0.0, 0.0, 0.0, 1.0)
+
+        if self.selected == "2 Color":
+            self.colors2[self.selectedCloth] = QtGui.QVector4D(0.0, 0.0, 0.0, 1.0)
+        
+        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+
+        self.update()
+        self.paintGL()
     
     def getOpenglInfo(self):
         info = """
@@ -451,7 +472,10 @@ class GLWidget(QOpenGLWidget):
         
         self.program.setUniformValue('mvp', m)
         self.program.setUniformValue('texture', 0)
-        self.program.setUniformValue('colors', self.colors[self.selectedBottom])
+        if(self.selected == "1 Color"):
+            self.program.setUniformValue('colors', self.colors[self.selectedBottom])
+        if(self.selected == "2 Color"):
+            self.program.setUniformValue('colors', self.colors2[self.selectedBottom])
 
         gl.glDrawElements( gl.GL_TRIANGLES, 6*6, gl.GL_UNSIGNED_INT, None)
 
@@ -472,7 +496,10 @@ class GLWidget(QOpenGLWidget):
         
         self.program.setUniformValue('mvp', m)
         self.program.setUniformValue('texture', 0)
-        self.program.setUniformValue('colors', self.colors[self.selectedTop])
+        if(self.selected == "1 Color"):
+            self.program.setUniformValue('colors', self.colors[self.selectedTop])
+        if(self.selected == "2 Color"):
+            self.program.setUniformValue('colors', self.colors2[self.selectedTop])
 
         gl.glDrawElements( gl.GL_TRIANGLES, 6*6, gl.GL_UNSIGNED_INT, None)
 
@@ -498,7 +525,10 @@ class GLWidget(QOpenGLWidget):
             
             self.program.setUniformValue('mvp', m)
             self.program.setUniformValue('texture', 0)
-            self.program.setUniformValue('colors', self.colors[x])
+            if(self.selected == "1 Color"):
+                self.program.setUniformValue('colors', self.colors[x])
+            if(self.selected == "2 Color"):
+                self.program.setUniformValue('colors', self.colors2[x])
             '''
             if(x < 6):
                 self.program.setUniformValue('colors', self.topColorsVector)
@@ -545,7 +575,8 @@ class GLWidget(QOpenGLWidget):
                 toScreen[1] <= texCoord[2] and
                 toScreen[1] >= texCoord[3]):
                 self.selectedCloth = x
-                self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], "TODO l 548")
+                self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+
                 if x <= 5:
                     self.selectedTop = x
                     self.topTexture = self.textures[x]
