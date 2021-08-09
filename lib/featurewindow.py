@@ -585,6 +585,34 @@ class ResultWidget(QWidget):
     def nbOutfitRendered(self):
         return len(self.renderList)
 
+        if label not in self.labelList:
+            self.labelList.append(label)
+
+        self.setMinimumSize(250, len(self.imageList) * 70 + 40)
+
+    def getLabelList(self):
+        return self.labelList
+
+    @pyqtSlot(str, bool)
+    def onSearchWidget(self, searchString, status):
+        if status == True:
+            self.searchList.append(searchString)
+        else:
+            self.searchList.remove(searchString)
+
+        if self.searchList == []:
+            self.show()
+        else:
+            res = all(elem in self.labelList for elem in self.searchList)
+
+            if res:
+                self.show()
+            else:
+                self.hide()
+    
+    def appendInSearchList(self, key):
+        self.searchList.append(key)
+
 class ResultHolder(QScrollArea):
     """docstring for ResultHolder"""
     sendVisibleList = pyqtSignal(list)
