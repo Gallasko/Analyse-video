@@ -322,15 +322,9 @@ class PlayerWindow(QMainWindow):
         else:
             self.stream.resume()
             QTimer.singleShot(0, self.printImage)
-<<<<<<< HEAD
 
         #self.videoOverlay.hide()
 
-=======
-
-        #self.videoOverlay.hide()
-
->>>>>>> 7c9476d3424e5e4e5be9591d4971f5f2c41e5290
     def printImage(self):
         if self.stream.isPlaying():
             if self.stream.readyRead():

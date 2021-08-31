@@ -2,6 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
+from skimage.io.collection import ImageCollection
 
 from .imagepipeline import ImagePipeline
 from .colorcircle import ColorCircleDialog
@@ -12,6 +13,7 @@ import time
 import numpy as np
 import math
 import threading
+import asyncio
 
 whiteStyle = """
 QVideoWidget{
@@ -32,7 +34,6 @@ background-color: #FFE6CD;
 
 #TODO multiples personnes detection across 2 or 3 frames
 #TODO pipette pour selectionner une couleur de la video
-
 
 def rgb_to_hsv(r, g, b):
     r, g, b = r/255.0, g/255.0, b/255.0
@@ -303,7 +304,6 @@ class CustomButtom(QLabel):
 
 class OutfitLabel(QWidget):
     sendInfo = pyqtSignal(str, int, np.ndarray, np.ndarray)
-    changed = pyqtSignal()
 
     def mousePressEvent(self, event):
         self.sendInfo.emit(self.text(), self.frameTime, self.frame, self.box)
@@ -327,7 +327,6 @@ class OutfitLabel(QWidget):
         self.colors = colors
         self.box = box
         self.showed = True
-        self.ready = False
 
         self.label = QLabel(self)
         self.colorPrinter = []
@@ -355,13 +354,10 @@ class OutfitLabel(QWidget):
         self.h = 60
 
         self.setMinimumSize(self.w, self.h)
-        self.ready = True
 
         self.show()
 
-    @pyqtSlot(list, list)
     def colorSearch(self, colorList1, colorList2):
-        self.ready = False
         self.showed = False
         #l2 = rgb_to_l(colorList1[0], colorList1[1], colorList1[2])
         #l3 = rgb_to_l(colorList2[0], colorList2[1], colorList2[2])
@@ -404,8 +400,7 @@ class OutfitLabel(QWidget):
             self.setMinimumSize(0, 0)
             self.hide()
 
-        self.changed.emit()
-        self.ready = True
+        return self.showed
 
     @pyqtSlot()
     def resetWidget(self):
@@ -413,11 +408,6 @@ class OutfitLabel(QWidget):
             self.setMinimumSize(self.w, self.h)
             self.showed = True
             self.show()
-
-            self.changed.emit()
-
-    def isReady(self):
-        return self.ready
 
     def setText(self, text):
         self.label.setText(text)
@@ -495,12 +485,15 @@ class ResultWidget(QWidget):
     def setWidgetId(self, id):
         self.widgetId = id
 
+    def getWidgetId(self):
+        return self.widgetId
+
     def addWidget(self, widget, image, label):
         self.imageList.append(image)
         self.widgetList.append(widget)
         self.flowLayout.addWidget(widget)
         self.renderList.append(widget)
-        widget.changed.connect(self.onWidgetChanged)
+        #widget.changed.connect(self.onWidgetChanged)
 
         if label not in self.labelList:
             self.labelList.append(label)
@@ -514,6 +507,23 @@ class ResultWidget(QWidget):
 
     def getLabelList(self):
         return self.labelList
+
+    def colorSearch(self, colorList1, colorList2):
+        self.renderList = []
+
+        for widget in self.widgetList:
+            if widget.colorSearch(colorList1, colorList2):
+                self.renderList.append(widget)
+
+        while self.flowLayout.count():
+            self.flowLayout.takeAt(0)
+
+        self.setMinimumSize(250, len(self.renderList) * 70 + 40)
+
+        for widget in self.renderList:
+            self.flowLayout.addWidget(widget)
+
+        return (len(self.renderList) > 0 and self.visible)
 
     @pyqtSlot(str, bool)
     def onSearchWidget(self, searchString, status):
@@ -585,11 +595,6 @@ class ResultWidget(QWidget):
     def nbOutfitRendered(self):
         return len(self.renderList)
 
-        if label not in self.labelList:
-            self.labelList.append(label)
-
-        self.setMinimumSize(250, len(self.imageList) * 70 + 40)
-
     def getLabelList(self):
         return self.labelList
 
@@ -640,6 +645,13 @@ class ResultHolder(QScrollArea):
         self.nextWidgetId = 0
         self.visibleWidget = []
 
+    @pyqtSlot(list, list)
+    def colorSearch(self, colorList1, colorList2):
+        for it in range(self.layout.count()):
+            self.visibleWidget[self.layout.itemAt(it).widget().getWidgetId()] = self.layout.itemAt(it).widget().colorSearch(colorList1, colorList2)
+
+        self.sendVisibleList.emit(self.visibleWidget)
+
     pyqtSlot(int, bool)
     def onWidgetVisibilityChanged(self, id, visible):
         self.visibleWidget[id] = visible
@@ -650,6 +662,10 @@ class ResultHolder(QScrollArea):
         self.nextWidgetId += 1
         self.visibleWidget.append(True)
         self.layout.addWidget(widget)
+
+    def appendEmpty(self):
+        self.nextWidgetId += 1
+        self.visibleWidget.append(False)
 
     def appendItem(self, item):
         self.layout.addItem(item)
@@ -671,6 +687,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
     #Signals#
     createResultWidget = pyqtSignal(list)
+    createEmptyWidget = pyqtSignal()
     setFrame = pyqtSignal(int)
     sendVisibleList = pyqtSignal(list)
     printFrame = pyqtSignal(int, np.ndarray, np.ndarray)
@@ -688,6 +705,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         self.running = False
 
         self.createResultWidget.connect(self.onCreateResultWidget)
+        self.createEmptyWidget.connect(self.onCreateEmptyWidget)
 
         self.searchLayout = FlowLayout()
         self.searchList = []
@@ -758,6 +776,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         #vBox.addStretch()
 
         self.resultHolder = ResultHolder()
+        self.searchColor.connect(self.resultHolder.colorSearch)
         self.resultHolder.sendVisibleList.connect(self.onReceiveVisibleList)
 
         self.mainWidget = QWidget()
@@ -785,6 +804,56 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
     def stopAnalyse(self):
         self.running = False
 
+    def runPipeline(self, images, count, fps):
+        timeElapsed = 0.0
+
+        t1 = time.perf_counter()
+        #print('successfully grabbed frame')
+        #frameCounted += 1
+
+        t5 = time.perf_counter()
+        #result = asyncio.run(self.pipeline.forward(images))
+        result = self.pipeline.forward(images)
+        t6 = time.perf_counter()
+
+        print(f"Image forwarding took: {t6 - t5:0.4f} seconds for {len(images)} images")
+
+        resultWidget = None
+        if(len(result[0]) != 0 or len(result[1]) != 0):
+            resultWidget = [(count, count/fps)]
+
+        #Top Result
+        for x in range(len(result[0])):
+            #topBodyPrediction = [result[0][x]['prediction'][0][0], 0, result[0][x]['prediction'][0][2], result[0][x]['prediction'][0][3], result[0][x]['prediction'][0][4], 0, result[0][x]['prediction'][0][6]]
+
+            print("top")
+            #resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[0][x]['image'], result[0][x]['color'], result[0][x]['box']))
+            resultWidget.append(('Tshirt', result[0][x]['image'], result[0][x]['color'], result[0][x]['box']))
+
+        #Bottom Result
+        for x in range(len(result[1])):
+            print("bottom")
+
+            resultWidget.append(('Trouser', result[1][x]['image'], result[1][x]['color'], result[1][x]['box']))
+
+        t3 = time.perf_counter()
+
+        if resultWidget != None:
+            self.createResultWidget.emit(resultWidget)
+        else:
+            self.createEmptyWidget.emit()
+
+        t4 = time.perf_counter()
+
+        print(f"Object Creation took: {t4 - t3:0.4f} seconds")
+
+        t2 = time.perf_counter()
+        timeElapsed += t2 - t1
+
+        print(f"Forwarding took: {t2 - t1:0.4f} seconds")
+
+        return timeElapsed
+
     def analyse(self):
         print("Running the pipeline on a Video")
         fpsReading = int(self.frameInputEdit.text())
@@ -797,47 +866,26 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         fps = int(vidcap.get(cv2.CAP_PROP_FPS))
         frameCounted = 0
 
-        timeElapsed = 0.0
-
         class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
                        'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+
+        t1 = time.perf_counter()
+
+        timeElapsed = 0.0
 
         while success:
             success,image = vidcap.read()
             #print('read a new frame:',success)
             if count%(fps*int(fpsReading)) == 0 :
-                t1 = time.perf_counter()
-                print('successfully grabbed frame')
                 frameCounted += 1
 
-                result = self.pipeline.forward(image)
+                timeElapsed += self.runPipeline(image, count, fps)
 
-                resultWidget = None
-                if(len(result[0]) != 0 or len(result[1]) != 0):
-                    resultWidget = [(count, count/fps)]
-
-                #Top Result
-                for x in range(len(result[0])):
-                    topBodyPrediction = [result[0][x]['prediction'][0][0], 0, result[0][x]['prediction'][0][2], result[0][x]['prediction'][0][3], result[0][x]['prediction'][0][4], 0, result[0][x]['prediction'][0][6]]
-
-                    print("top")
-                    resultWidget.append((class_names[np.argmax(topBodyPrediction)], result[0][x]['image'], result[0][x]['color'], result[0][x]['box']))
-
-                #Bottom Result
-                for x in range(len(result[1])):
-                    print("bottom")
-
-                    resultWidget.append(('Trouser', result[1][x]['image'], result[1][x]['color'], result[1][x]['box']))
-
-                if resultWidget != None:
-                    self.createResultWidget.emit(resultWidget)
-
-                t2 = time.perf_counter()
-                timeElapsed += t2 - t1
-
-                print(f"Forwarding took: {t2 - t1:0.4f} seconds")
             count+=1
         
+        t2 = time.perf_counter()
+        print(f"Frame read: {(t2 - t1 - timeElapsed) / frameCounted:0.4f} seconds")
+
         print(f"Elapsed Time: {timeElapsed:0.2f}, Mean Time per image : {timeElapsed / frameCounted:0.4f}")
 
         self.running = False
@@ -864,7 +912,6 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
 
                 label = OutfitLabel(widgetInfo[x][0], widgetInit[0], widgetInfo[x][1], widgetInfo[x][2], widgetInfo[x][3])
                 label.sendInfo.connect(self.onOutfitLabelClicked)
-                self.searchColor.connect(label.colorSearch)
                 self.resetButton.clicked.connect(label.resetWidget)
                 resultWidget.addWidget(label, widgetInfo[x][1], widgetInfo[x][0])
 
@@ -873,6 +920,10 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         resultWidget.showResult.connect(self.onWidgetClicked)
         resultWidget.sendVisibleList.connect(self.resultHolder.onWidgetVisibilityChanged)
         self.searchWidget.connect(resultWidget.onSearchWidget)
+    
+    @pyqtSlot()
+    def onCreateEmptyWidget(self):
+        self.resultHolder.appendEmpty()
 
     @pyqtSlot(QColor)
     def onColorModified(self, color):
