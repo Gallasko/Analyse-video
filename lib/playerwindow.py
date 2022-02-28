@@ -20,7 +20,7 @@ import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 
-from mrcnn import visualize
+#from mrcnn import visualize
 
 appStyle = """
 QMainWindow{
@@ -268,6 +268,8 @@ class PlayerWindow(QMainWindow):
         self.rgb_weights = [0.2989, 0.5870, 0.1140]
         grayscale_image = np.dot(img[...,:3], self.rgb_weights)
 
+        #TODO uncomment this when running the pipeline
+        """
         colors = visualize.random_colors(1)
         print(colors)
 
@@ -275,6 +277,8 @@ class PlayerWindow(QMainWindow):
 
         for c in range(3):
             currentImage[:, :, c] = np.where(grayscale_image > 0.2, currentImage[:, :, c] * (1 - alpha) + alpha * colors[0][c] * 255, currentImage[:, :, c])
+
+        """
 
         #currentImage[0:img.shape[0], 0:img.shape[1]] = img
         #masked_image = currentImage.astype(np.uint32).copy()

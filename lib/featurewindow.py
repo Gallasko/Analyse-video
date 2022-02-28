@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui
 from skimage.io.collection import ImageCollection
 
-from .imagepipeline import ImagePipeline
+#from .imagepipeline import ImagePipeline
 from .colorcircle import ColorCircleDialog
 from .openglwidget2 import GLWidget
 
@@ -701,7 +701,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         self.width = 640
         self.height = 480
 
-        self.pipeline = ImagePipeline()
+        #self.pipeline = ImagePipeline()
         self.running = False
 
         self.createResultWidget.connect(self.onCreateResultWidget)
@@ -718,12 +718,18 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         self.setGeometry(0,0, self.width, self.height)
         self.setWindowTitle(self.title)
 
+        menuBar = self.menuBar()
+
+        fileMenu = menuBar.addMenu('&Preset 1')
+        fileMenu = menuBar.addMenu('&Preset 2')
+        fileMenu = menuBar.addMenu('&Preset 3')
+
         frameInputLabel = QLabel("Grab a frame each x seconds: ")
         self.frameInputEdit = QLineEdit()
-        self.frameInputEdit.returnPressed.connect(self.startAnalyse)
+        #self.frameInputEdit.returnPressed.connect(self.startAnalyse)
 
         runButton = QPushButton("Run")
-        runButton.clicked.connect(self.startAnalyse)
+        #runButton.clicked.connect(self.startAnalyse)
 
         hBox = QHBoxLayout()
 
