@@ -17,10 +17,7 @@ from .videostream import VideoStream
 
 import cv2
 
-import matplotlib
-import matplotlib.pyplot as plt
-
-#from mrcnn import visualize
+from mrcnn import visualize
 
 appStyle = """
 QMainWindow{
@@ -75,8 +72,6 @@ class PlayerWindow(QMainWindow):
         super(PlayerWindow, self).__init__(parent)
         self.width = 640
         self.height = 480
-
-        matplotlib.use('QT5Agg')
 
         self.setGeometry(0,0, self.width, self.height)
 
@@ -268,8 +263,6 @@ class PlayerWindow(QMainWindow):
         self.rgb_weights = [0.2989, 0.5870, 0.1140]
         grayscale_image = np.dot(img[...,:3], self.rgb_weights)
 
-        #TODO uncomment this when running the pipeline
-        """
         colors = visualize.random_colors(1)
         print(colors)
 
@@ -277,8 +270,6 @@ class PlayerWindow(QMainWindow):
 
         for c in range(3):
             currentImage[:, :, c] = np.where(grayscale_image > 0.2, currentImage[:, :, c] * (1 - alpha) + alpha * colors[0][c] * 255, currentImage[:, :, c])
-
-        """
 
         #currentImage[0:img.shape[0], 0:img.shape[1]] = img
         #masked_image = currentImage.astype(np.uint32).copy()
@@ -313,9 +304,6 @@ class PlayerWindow(QMainWindow):
         #    self.imageMask = ResultWindow("Mask", pixmap)
         #else:
         #    self.imageMask.setImage(pixmap)
-
-        plt.imshow(frame, cmap=plt.cm.binary)
-        plt.show()
 
     def exitCall(self):
         sys.exit(app.exec_())

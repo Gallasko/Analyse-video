@@ -11,4 +11,6 @@
 /dist/
 /Analyse video.rar
 *.pyc
-
+*.npz
+*.metadata
+*.meta

@@ -89,7 +89,7 @@ class GLWidget(QOpenGLWidget):
         super(GLWidget, self).__init__(parent)
 
         self.profile = QtGui.QOpenGLVersionProfile()
-        self.profile.setVersion( 4, 3)
+        self.profile.setVersion(4, 3)
 
         self.xRot = 0
         self.yRot = 0
@@ -210,7 +210,6 @@ class GLWidget(QOpenGLWidget):
 
         return info
 
-
     def rotateBy(self, xAngle, yAngle, zAngle):
         print(str(xAngle) + ", " + str(yAngle) + ", " + str(zAngle))
         self.xRot += xAngle
@@ -253,9 +252,8 @@ class GLWidget(QOpenGLWidget):
         painter.end()
     '''
 
-
     def minimumSizeHint(self):
-        return QSize(600, 400)
+        return QSize(300, 300)
 
     def initializeGL(self):
         print(self.getOpenglInfo())
@@ -407,7 +405,6 @@ class GLWidget(QOpenGLWidget):
 
         self.timer.start(100)
 
-
     def resizeGL(self, width, height):
         gl.glViewport(0, 0, width, height)
 
@@ -425,7 +422,6 @@ class GLWidget(QOpenGLWidget):
         vbo.release()
 
         return vbo
-
 
     def paintGL(self):
         #gl.glEnable(gl.GL_DEPTH_TEST)
@@ -460,8 +456,9 @@ class GLWidget(QOpenGLWidget):
         m = QtGui.QMatrix4x4()
         
         m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
-        m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
-        m.translate(-1.0, 0.5, self.zPos - 1)
+        m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
+        #m.scale(300.0 / self.width(), 239.0 / self.height(), 1.0)
+        m.translate(0.0, 0.3, self.zPos - 1)
         
         #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)  
         m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
@@ -477,7 +474,7 @@ class GLWidget(QOpenGLWidget):
         if(self.selected == "2 Color"):
             self.program.setUniformValue('colors', self.colors2[self.selectedBottom])
 
-        gl.glDrawElements( gl.GL_TRIANGLES, 6*6, gl.GL_UNSIGNED_INT, None)
+        gl.glDrawElements( gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, None)
 
         m.setToIdentity()
 
@@ -485,8 +482,8 @@ class GLWidget(QOpenGLWidget):
         m = QtGui.QMatrix4x4()
         
         m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
-        m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
-        m.translate(-1.0, 0.0, self.zPos)
+        m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
+        m.translate(0.0, -0.2, self.zPos)
         #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
         m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
         m.rotate(self.yRot / 16.0, 0.0, 1.0, 0.0)
@@ -501,12 +498,13 @@ class GLWidget(QOpenGLWidget):
         if(self.selected == "2 Color"):
             self.program.setUniformValue('colors', self.colors2[self.selectedTop])
 
-        gl.glDrawElements( gl.GL_TRIANGLES, 6*6, gl.GL_UNSIGNED_INT, None)
+        gl.glDrawElements( gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, None)
 
         #END Avatar Tex
 
         #Hud Tex
 
+        """
         for x in range(10):
             m.setToIdentity()
 
@@ -536,8 +534,9 @@ class GLWidget(QOpenGLWidget):
                 self.program.setUniformValue('colors', self.bottomColorsVector)
             '''
 
-            gl.glDrawElements( gl.GL_TRIANGLES, 6*6, gl.GL_UNSIGNED_INT, None)
+            gl.glDrawElements( gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, None)
 
+        """
 
         self.vao.release()
 
@@ -587,7 +586,6 @@ class GLWidget(QOpenGLWidget):
         self.update()
         self.paintGL()
 
-
     def mouseMoveEvent(self, event):
         dx = event.x() - self.lastPos.x()
         dy = event.y() - self.lastPos.y()
@@ -600,7 +598,6 @@ class GLWidget(QOpenGLWidget):
         self.lastPos = event.pos()
         self.paintGL()
         
-
     def wheelEvent(self, event):
         self.zPos += event.angleDelta().y() / 120
         print(self.zPos)
