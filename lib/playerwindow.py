@@ -63,9 +63,9 @@ import numpy as np
 
 def boolToColor(bool):
     if(bool):
-        return "green"
-    else:
         return "red"
+    else:
+        return "transparent"
 
 class PlayerWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -190,7 +190,7 @@ class PlayerWindow(QMainWindow):
             self.featureWindow.setVideo(fileName)
             self.featureWindow.setFrame.connect(self.onSetFrame)
             self.featureWindow.showWidget()
-
+            
             self.durationChanged(self.stream.getNbFrame())
 
     @pyqtSlot(int)

@@ -85,7 +85,7 @@ class GLWidget(QOpenGLWidget):
     clicked = pyqtSignal()
     selectedAvatar = pyqtSignal(list, list, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, changeAvatar=False):
         super(GLWidget, self).__init__(parent)
 
         self.profile = QtGui.QOpenGLVersionProfile()
@@ -109,6 +109,11 @@ class GLWidget(QOpenGLWidget):
 
         self.colors = []
 
+        # Bool value to know if we are selecting and avatar or only displaying it
+        # If set to False -> only display the selected avatar
+        # If set to True  -> diplay all the possible cloths for the avatar
+        self.changeAvatar = changeAvatar
+
         for i in range(10):
             self.colors.append(QtGui.QVector4D(0.0, 0.0, 0.0, 1.0))
 
@@ -120,7 +125,7 @@ class GLWidget(QOpenGLWidget):
         self.selected = "1 Color"
         self.selectedCloth = 0
         self.selectedTop = 0
-        self.selectedBottom = 6
+        self.selectedBottom = 9
 
     @pyqtSlot()
     def onTimeout(self):
@@ -163,7 +168,7 @@ class GLWidget(QOpenGLWidget):
             self.colors2[self.selectedCloth].setY(colors[1])
             self.colors2[self.selectedCloth].setZ(colors[2])
 
-        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO in signal selectedAvatar of OpenGL widget")
 
         self.update()
         self.paintGL()
@@ -190,7 +195,7 @@ class GLWidget(QOpenGLWidget):
         if self.selected == "2 Color":
             self.colors2[self.selectedCloth] = QtGui.QVector4D(0.0, 0.0, 0.0, 1.0)
         
-        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO in signal selectedAvatar of OpenGL widget")
 
         self.update()
         self.paintGL()
@@ -253,7 +258,10 @@ class GLWidget(QOpenGLWidget):
     '''
 
     def minimumSizeHint(self):
-        return QSize(300, 300)
+        if self.changeAvatar == False:
+            return QSize(300, 300)
+        else:
+            return QSize(550, 500)
 
     def initializeGL(self):
         print(self.getOpenglInfo())
@@ -405,6 +413,21 @@ class GLWidget(QOpenGLWidget):
 
         self.timer.start(100)
 
+    def getSelectedClothes(self):
+        return [self.selectedTop, self.selectedBottom, self.colors[self.selectedCloth], self.colors2[self.selectedCloth]]
+
+    def setSelectedClothes(self, top, bottom, colors, colors2):
+        self.selectedTop = top
+        self.selectedBottom = bottom
+
+        self.topTexture = self.textures[top]
+        self.bottomTexture = self.textures[bottom]
+
+        self.colors[self.selectedCloth] = colors
+        self.colors2[self.selectedCloth] = colors2
+
+        self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO in signal selectedAvatar of OpenGL widget")
+
     def resizeGL(self, width, height):
         gl.glViewport(0, 0, width, height)
 
@@ -454,11 +477,19 @@ class GLWidget(QOpenGLWidget):
 
         # initialise Camera matrix with initial rotation
         m = QtGui.QMatrix4x4()
-        
-        m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
-        m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
-        #m.scale(300.0 / self.width(), 239.0 / self.height(), 1.0)
-        m.translate(0.0, 0.3, self.zPos - 1)
+
+        # Avatar in full size
+        if self.changeAvatar == False:
+            m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
+            m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
+            #m.scale(300.0 / self.width(), 239.0 / self.height(), 1.0)
+            m.translate(0.0, 0.3, self.zPos - 1)
+        else:
+            m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
+            m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
+            #m.scale(300.0 / self.width(), 239.0 / self.height(), 1.0)
+            m.translate(-1.0, 0.5, self.zPos - 1)
+
         
         #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)  
         m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
@@ -481,9 +512,16 @@ class GLWidget(QOpenGLWidget):
         # initialise Camera matrix with initial rotation
         m = QtGui.QMatrix4x4()
         
-        m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
-        m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
-        m.translate(0.0, -0.2, self.zPos)
+        # Avatar in full size
+        if self.changeAvatar == False:
+            m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
+            m.scale(2 * 256.0 / self.width(), 2 * 187.0 / self.height(), 1.0)
+            m.translate(0.0, -0.2, self.zPos)
+        else:
+            m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
+            m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
+            m.translate(-1.0, 0.0, self.zPos)
+
         #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
         m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
         m.rotate(self.yRot / 16.0, 0.0, 1.0, 0.0)
@@ -504,39 +542,37 @@ class GLWidget(QOpenGLWidget):
 
         #Hud Tex
 
-        """
-        for x in range(10):
-            m.setToIdentity()
+        if self.changeAvatar:
+            for x in range(10):
+                m.setToIdentity()
 
-            # initialise Camera matrix with initial rotation
-            m = QtGui.QMatrix4x4()
-            
-            m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
-            m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
-            m.translate(1.0 + (x % 2), -2.0 + math.floor(x / 2), self.zPos)
-            #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
-            #m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
-            #m.rotate(self.yRot / 16.0, 0.0, 1.0, 0.0)
-            #m.rotate(self.zRot / 16.0, 0.0, 0.0, 1.0)
+                # initialise Camera matrix with initial rotation
+                m = QtGui.QMatrix4x4()
+                
+                m.ortho(-1.0, 1.0, 1.0, -1.0, -2.0, 15.0)
+                m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
+                m.translate(0.5 + (x % 2), -2.0 + math.floor(x / 2), self.zPos)
+                #m.scale(256.0 / self.width(), 187.0 / self.height(), 1.0)
+                #m.rotate(self.xRot / 16.0, 1.0, 0.0, 0.0)
+                #m.rotate(self.yRot / 16.0, 0.0, 1.0, 0.0)
+                #m.rotate(self.zRot / 16.0, 0.0, 0.0, 1.0)
 
-            self.textures[x].bind()
-            
-            self.program.setUniformValue('mvp', m)
-            self.program.setUniformValue('texture', 0)
-            if(self.selected == "1 Color"):
-                self.program.setUniformValue('colors', self.colors[x])
-            if(self.selected == "2 Color"):
-                self.program.setUniformValue('colors', self.colors2[x])
-            '''
-            if(x < 6):
-                self.program.setUniformValue('colors', self.topColorsVector)
-            else:
-                self.program.setUniformValue('colors', self.bottomColorsVector)
-            '''
+                self.textures[x].bind()
+                
+                self.program.setUniformValue('mvp', m)
+                self.program.setUniformValue('texture', 0)
+                if(self.selected == "1 Color"):
+                    self.program.setUniformValue('colors', self.colors[x])
+                if(self.selected == "2 Color"):
+                    self.program.setUniformValue('colors', self.colors2[x])
+                '''
+                if(x < 6):
+                    self.program.setUniformValue('colors', self.topColorsVector)
+                else:
+                    self.program.setUniformValue('colors', self.bottomColorsVector)
+                '''
 
-            gl.glDrawElements( gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, None)
-
-        """
+                gl.glDrawElements( gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, None)
 
         self.vao.release()
 
@@ -566,7 +602,7 @@ class GLWidget(QOpenGLWidget):
         #print ( -1.0 * 256.0 / self.width() , 0.5 * 187.0 / self.height())
 
         for x in range(10):
-            texCoord = [(1.0 + (x % 2) + 0.5) * 256.0 / self.width(), (1.0 + (x % 2) - 0.5) * 256.0 / self.width(), (-2.0 + math.floor(x / 2) + 0.5) * 187.0 / self.height(), (-2.0 + math.floor(x / 2) - 0.5) * 187.0 / self.height()]
+            texCoord = [(0.5 + (x % 2) + 0.5) * 256.0 / self.width(), (0.5 + (x % 2) - 0.5) * 256.0 / self.width(), (-2.0 + math.floor(x / 2) + 0.5) * 187.0 / self.height(), (-2.0 + math.floor(x / 2) - 0.5) * 187.0 / self.height()]
             print(texCoord)
 
             if (toScreen[0] <= texCoord[0] and 
@@ -574,7 +610,7 @@ class GLWidget(QOpenGLWidget):
                 toScreen[1] <= texCoord[2] and
                 toScreen[1] >= texCoord[3]):
                 self.selectedCloth = x
-                self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO l 548")
+                self.selectedAvatar.emit([self.colors[self.selectedCloth].x() * 255, self.colors[self.selectedCloth].y() * 255, self.colors[self.selectedCloth].z() * 255], [self.colors2[self.selectedCloth].x() * 255, self.colors2[self.selectedCloth].y() * 255, self.colors2[self.selectedCloth].z() * 255], "TODO in signal selectedAvatar of OpenGL widget")
 
                 if x <= 5:
                     self.selectedTop = x
@@ -597,19 +633,20 @@ class GLWidget(QOpenGLWidget):
 
         self.lastPos = event.pos()
         self.paintGL()
-        
+
+    '''  
     def wheelEvent(self, event):
         self.zPos += event.angleDelta().y() / 120
         print(self.zPos)
 
         self.update()
         self.paintGL()
+    '''
 
     def mouseReleaseEvent(self, event):
         self.clicked.emit()
 
 if __name__ == '__main__':
-
     app = QApplication(sys.argv)
     ex = App()
     ex.show()

@@ -137,9 +137,9 @@ def lab_to_lch(l, a, b):
 
     return l, c, h
 
-def deltaColor(rgbTuple1, rgbTuple2):
-    r1, g1, b1 = rgbTuple1
-    r2, g2, b2 = rgbTuple2    
+def deltaColor(bgrTuple1, bgrTuple2):
+    b1, g1, r1 = bgrTuple1
+    b2, g2, r2 = bgrTuple2    
 
     x1, y1, z1 = rgb_to_xyz(r1, g1, b1)
     l1, a1, b1 = xyz_to_lab(x1, y1, z1)
@@ -366,7 +366,15 @@ class OutfitLabel(QWidget):
 
         self.setMinimumSize(self.w, self.h)
 
+    def showLabel(self):
+        self.setMinimumSize(self.w, self.h)
+        self.showed = True
         self.show()
+
+    def hideLabel(self):
+        self.setMinimumSize(0, 0)
+        self.showed = False
+        self.hide()
 
     def getValues(self):
         return self.label.text(), self.frameTime, self.frameNumber, self.fullFrame, self.colors, self.box, self.frame
@@ -401,9 +409,7 @@ class OutfitLabel(QWidget):
             #print(l, l2, contrastRatio)
             #print((color[0] * 255, color[1] * 255, color[2] * 255))
             
-            
             #if h < colorList[0] - 10 or h > colorList[0] + 10:
-            
 
             if correspondingColor == True:
                 self.setMinimumSize(self.w, self.h)
@@ -505,10 +511,15 @@ class ResultWidget(QWidget):
         layout = QVBoxLayout()
         layout.addLayout(self.hBox)
         layout.addLayout(self.flowLayout)
+        layout.addStretch()
 
         #print(self.nbVisibleWidget(), len(self.imageList))
 
         self.setMinimumSize(625, len(self.renderList) * 70 + 40)
+
+        #if len(self.renderList) == 0:
+        #    self.hide()
+
         #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
         #self.setMaximumSize(250, self.nbVisibleWidget() * 70 + 40)
 
@@ -546,6 +557,9 @@ class ResultWidget(QWidget):
 
         self.setMinimumSize(625, int((len(self.widgetList) + 1) / 2) * 300 + 40)
 
+        #if len(self.widgetList) > 0:
+        #    self.show()
+
         #self.setMinimumSize(250, self.nbVisibleWidget() * 70 + 40)
         #self.setMaximumSize(250, self.nbVisibleWidget() * 70 + 40)
 
@@ -557,15 +571,26 @@ class ResultWidget(QWidget):
 
         for widget in self.widgetList:
             if widget.colorSearch(colorList1, colorList2):
+                widget.showLabel()
                 self.renderList.append(widget)
+            else:
+                widget.hideLabel()
 
         while self.flowLayout.count():
             self.flowLayout.takeAt(0)
 
         self.setMinimumSize(625, int((len(self.renderList) + 1) / 2) * 300 + 40)
 
+        if len(self.renderList) == 0:
+            self.hide()
+        else:
+            self.show()
+
+        length = 0
+
         for widget in self.renderList:
-            self.flowLayout.addWidget(widget)
+            self.flowLayout.addWidget(widget, int(length / 2), int(length % 2))
+            length += 1
 
         return (len(self.renderList) > 0 and self.visible)
 
@@ -598,7 +623,10 @@ class ResultWidget(QWidget):
             visibleList.append(widget.isVisible())
 
             if widget.isVisible():
+                widget.showLabel()
                 self.renderList.append(widget)
+            else:
+                widget.hideLabel()
 
         #del self.flowLayout
         #self.flowLayout = FlowLayout()
@@ -610,6 +638,11 @@ class ResultWidget(QWidget):
             self.flowLayout.takeAt(0)
 
         self.setMinimumSize(625, int((len(self.renderList) + 1) / 2) * 300 + 40)
+
+        if len(self.renderList) == 0:
+            self.hide()
+        else:
+            self.show()
 
         length = 0
 
@@ -713,7 +746,8 @@ class ResultHolder(QScrollArea):
     @pyqtSlot(list, list)
     def colorSearch(self, colorList1, colorList2):
         for it in range(self.layout.count()):
-            self.visibleWidget[self.layout.itemAt(it).widget().getWidgetId()] = self.layout.itemAt(it).widget().colorSearch(colorList1, colorList2)
+            if self.layout.itemAt(it).widget() is not None:
+                self.visibleWidget[self.layout.itemAt(it).widget().getWidgetId()] = self.layout.itemAt(it).widget().colorSearch(colorList1, colorList2)
 
         self.sendVisibleList.emit(self.visibleWidget)
 
@@ -723,7 +757,7 @@ class ResultHolder(QScrollArea):
         self.sendVisibleList.emit(self.visibleWidget)
 
     def appendWidget(self, widget):
-        #widget.setWidgetId(self.nextWidgetId)
+        widget.setWidgetId(self.nextWidgetId)
         self.nextWidgetId += 1
         self.visibleWidget.append(True)
         self.layout.addWidget(widget)
@@ -742,6 +776,46 @@ class ResultHolder(QScrollArea):
                 child.widget().deleteLater()
 
         self.nextWidgetId = 0
+
+class ColorAvatarDialog(QDialog):
+    avatarColor = pyqtSignal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Select Avatar")
+
+        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        colorWheel = ColorCircleDialog()
+        colorWheel.currentColorChanged.connect(self.onColorModified)
+
+        self.avatarWidget = GLWidget(self, True)
+        self.avatarColor.connect(self.avatarWidget.changeColor)
+
+        self.layout = QVBoxLayout()
+        message = QLabel("Choose Avatar: ")
+        self.layout.addWidget(message)
+
+        # Color wheel to be shown as a dialog when the user click on a cloth
+        self.layout.addWidget(colorWheel)
+        
+        self.layout.addWidget(self.avatarWidget)
+        self.layout.addWidget(self.buttonBox)
+        self.setLayout(self.layout)
+
+    def getClothes(self):
+        return self.avatarWidget.getSelectedClothes()
+
+    @pyqtSlot(QColor)
+    def onColorModified(self, color):
+        #self.searchColor.emit([color.hue(), color.saturation(), color.value()])
+        #self.searchColor.emit([color.red(), color.green(), color.blue()])
+        self.avatarColor.emit([color.red() / 255, color.green() / 255, color.blue() / 255])
 
 class FeatureWindow(QMainWindow): # Helper class to quickly print result to screen
     #Event#
@@ -804,6 +878,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         #self.frameInputEdit.returnPressed.connect(self.startAnalyse)
 
         changeAvatarButton = QPushButton("Change Avatar")
+        changeAvatarButton.clicked.connect(self.onChangeAvatarClicked)
 
         changeAvatarButton.setStyleSheet(
             "padding-top: 10px; padding-bottom: 20px;"
@@ -822,8 +897,8 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         #hBox2.addWidget(searchText)
         #hBox2.addWidget(searchEdit)
 
-        #self.colorWheel = ColorCircleDialog()
-        #self.colorWheel.currentColorChanged.connect(self.onColorModified)
+        self.colorWheel = ColorCircleDialog()
+        self.colorWheel.currentColorChanged.connect(self.onColorModified)
 
         self.avatarWidget = GLWidget()
         self.avatarColor.connect(self.avatarWidget.changeColor)
@@ -857,6 +932,7 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         #vBox.addLayout(self.searchLayout)
         #vBox.addLayout(hBox3)
         vBox.addWidget(self.avatarWidget)
+        #vBox.addWidget(self.colorWheel)
         vBox.addWidget(changeAvatarButton)
         #vBox.addStretch()
 
@@ -875,6 +951,17 @@ class FeatureWindow(QMainWindow): # Helper class to quickly print result to scre
         self.tab1.setLayout(self.layout)
 
         #self.mainWidget.setLayout(self.layout)
+
+    def onChangeAvatarClicked(self):
+        colorAvatarDialog = ColorAvatarDialog(self)
+
+        if colorAvatarDialog.exec():
+            print("Success!")
+
+            top, bottom, color, color2 = colorAvatarDialog.getClothes()
+            self.avatarWidget.setSelectedClothes(top, bottom, color, color2)
+        else:
+            print("Cancel!")
 
     def showWidget(self):
         self.show()
