@@ -15,6 +15,14 @@ from PIL import Image
 
 import tensorflow as tf
 
+physical_device = tf.config.list_physical_devices('GPU')
+print("Num GPUs Available: ", len(physical_device))
+#for device in physical_device:
+#    tf.config.experimental.set_memory_growth(device, True)
+
+#tf.config.experimental.set_virtual_device_configuration(physical_device[0], 
+#[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=3548)])
+
 # Root directory of the project
 ROOT_DIR = os.path.abspath("")
 
@@ -55,6 +63,8 @@ print(COCO_MODEL_PATH)
 if not os.path.exists(COCO_MODEL_PATH):
     utils.download_trained_weights(COCO_MODEL_PATH)
 
+YOLOACTMODELPATH = os.path.join(ROOT_DIR, "weights/yolact_edge_resnet50_54_800000.pth")
+
 print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
 def rgb2ycbcr(im):
@@ -81,11 +91,158 @@ def bbox2(img):
     xmin, xmax = np.where(cols)[0][[0, -1]]
     return img[ymin:ymax+1, xmin:xmax+1]
 
+import torch
+
+#torch.cuda.set_per_process_memory_fraction(0.333, 0) #TODO remove this when releasing on a gtx2070 and upward
+torch.cuda.empty_cache()
+
+import torch.backends.cudnn as cudnn
+from torch.autograd import Variable
+
+from yolact_edge.data import cfg, set_cfg, set_dataset
+from yolact_edge.yolact import Yolact
+from yolact_edge.utils.augmentations import BaseTransform, BaseTransformVideo, FastBaseTransform, Resize
+from yolact_edge.layers.output_utils import postprocess, undo_image_transformation
+from yolact_edge.utils import timer
+
+class Detections:
+    def __init__(self):
+        self.bbox_data = []
+        self.mask_data = []
+
+    def add_bbox(self, image_id:int, category_id:int, bbox:list, score:float):
+        """ Note that bbox should be a list or tuple of (x1, y1, x2, y2) """
+        bbox = [bbox[0], bbox[1], bbox[2]-bbox[0], bbox[3]-bbox[1]]
+
+        # Round to the nearest 10th to avoid huge file sizes, as COCO suggests
+        bbox = [round(float(x)*10)/10 for x in bbox]
+
+        self.bbox_data.append({
+            'image_id': int(image_id),
+            'category_id': get_coco_cat(int(category_id)),
+            'bbox': bbox,
+            'score': float(score)
+        })
+
+    def add_mask(self, image_id:int, category_id:int, segmentation:np.ndarray, score:float):
+        """ The segmentation should be the full mask, the size of the image and with size [h, w]. """
+        rle = pycocotools.mask.encode(np.asfortranarray(segmentation.astype(np.uint8)))
+        rle['counts'] = rle['counts'].decode('ascii') # json.dump doesn't like bytes strings
+
+        self.mask_data.append({
+            'image_id': int(image_id),
+            'category_id': get_coco_cat(int(category_id)),
+            'segmentation': rle,
+            'score': float(score)
+        })
+
+    def dump(self):
+        dump_arguments = [
+            (self.bbox_data, args.bbox_det_file),
+            (self.mask_data, args.mask_det_file)
+        ]
+
+        for data, path in dump_arguments:
+            with open(path, 'w') as f:
+                json.dump(data, f)
+    
+    def dump_web(self):
+        """ Dumps it in the format for my web app. Warning: bad code ahead! """
+        config_outs = ['preserve_aspect_ratio', 'use_prediction_module',
+                        'use_yolo_regressors', 'use_prediction_matching',
+                        'train_masks']
+
+        output = {
+            'info' : {
+                'Config': {key: getattr(cfg, key) for key in config_outs},
+            }
+        }
+
+        image_ids = list(set([x['image_id'] for x in self.bbox_data]))
+        image_ids.sort()
+        image_lookup = {_id: idx for idx, _id in enumerate(image_ids)}
+
+        output['images'] = [{'image_id': image_id, 'dets': []} for image_id in image_ids]
+
+        # These should already be sorted by score with the way prep_metrics works.
+        for bbox, mask in zip(self.bbox_data, self.mask_data):
+            image_obj = output['images'][image_lookup[bbox['image_id']]]
+            image_obj['dets'].append({
+                'score': bbox['score'],
+                'bbox': bbox['bbox'],
+                'category': cfg.dataset.class_names[get_transformed_cat(bbox['category_id'])],
+                'mask': mask['segmentation'],
+            })
+
+        with open(os.path.join(args.web_det_path, '%s.json' % cfg.name), 'w') as f:
+            json.dump(output, f)
+
+def evalimage(net, image, resultModel, detections:Detections=None):
+    t1 = time.perf_counter()
+    net.detect.use_fast_nms = True
+    cfg.mask_proto_debug = False
+
+    with torch.no_grad():
+        frame = torch.from_numpy(image).cuda().float()
+        batch = FastBaseTransform()(frame.unsqueeze(0))
+
+        extras = {"backbone": "full", "interrupt": False, "keep_statistics": False, "moving_statistics": None}
+
+        preds = net(batch, extras=extras)["pred_outs"]
+
+        with timer.env('Postprocess'):
+            _, _, h, w = batch.size()
+            classes, scores, boxes, masks = \
+                        postprocess(preds, w, h, crop_masks=True, score_threshold=0.25)
+            #torch.cuda.synchronize()
+
+        resultModel[0] = {'class_ids': classes.cpu().detach().numpy(), 'scores': scores.cpu().detach().numpy(), 'rois': boxes.cpu().detach().numpy(), 'masks': masks.cpu().detach().numpy()}
+        #print(resultModel[0]['class_ids'])
+        #print(resultModel[0]['scores'])
+        #print(resultModel[0]['rois'])
+        #print(resultModel[0]['masks'])
+
+    t2 = time.perf_counter()
+    
+    print(f"YoloAct Result took: {t2 - t1:0.4f} seconds")
+
+    #if args.output_coco_json:
+    #    with timer.env('Postprocess'):
+    #        _, _, h, w = batch.size()
+    #        classes, scores, boxes, masks = \
+    #            postprocess(preds, w, h, crop_masks=args.crop, score_threshold=args.score_threshold)
+#
+    #    with timer.env('JSON Output'):
+    #        boxes = boxes.cpu().numpy()
+    #        masks = masks.view(-1, h, w).cpu().numpy()
+    #        for i in range(masks.shape[0]):
+    #            # Make sure that the bounding box actually makes sense and a mask was produced
+    #            if (boxes[i, 3] - boxes[i, 1]) * (boxes[i, 2] - boxes[i, 0]) > 0:
+    #                detections.add_bbox(image_id, classes[i], boxes[i,:],   scores[i])
+    #                detections.add_mask(image_id, classes[i], masks[i,:,:], scores[i])
+    #
+    #if save_path is None:
+    #    img_numpy = img_numpy[:, :, (2, 1, 0)]
+#
+    #if save_path is None:
+    #    plt.imshow(img_numpy)
+    #    plt.title(path)
+    #    plt.show()
+    #else:
+    #    cv2.imwrite(save_path, img_numpy)
+
 class InferenceConfig(CocoConfig):
     # Set batch size to 1 since we'll be running inference on
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
+    #BACKBONE = "resnet101"
+    IMAGE_RESIZE_MODE = "square"
+    #IMAGE_MIN_DIM = 400
+    #IMAGE_MAX_DIM = 512
+
+    IMAGE_MIN_DIM = 320
+    IMAGE_MAX_DIM = 320
 
 rgb_weights = [0.2989, 0.5870, 0.1140]
 
@@ -283,27 +440,6 @@ class ImagePipeline():
         #self.bpModel = load_model(download_model(BodyPixModelPaths.MOBILENET_RESNET50_FLOAT_STRIDE_16))
         #dl = download_model(BodyPixModelPaths.MOBILENET_FLOAT_100_STRIDE_16)
         #self.bpModel = load_model(dl)
-
-        """
-        #FashionMnist Training
-        fashion_mnist = tf.keras.datasets.fashion_mnist
-
-        (self.train_images, self.train_labels), (self.test_images, self.test_labels) = fashion_mnist.load_data()
-
-        self.mnistModel = tf.keras.Sequential([
-            tf.keras.layers.Flatten(input_shape=(28, 28)),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(10)
-        ])
-
-        self.mnistModel.compile(optimizer='adam',
-                                loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                                metrics=['accuracy'])
-
-        self.mnistModel.fit(self.train_images, self.train_labels, epochs=1000)
-
-        self.mnistModel.save('mnistModel')
-        """
 
         self.mnistModel = tf.keras.models.load_model('mnistModel')
 

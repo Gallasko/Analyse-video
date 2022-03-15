@@ -277,9 +277,7 @@ class PlayerWindow(QMainWindow):
         #masked_image = visualize.apply_mask(masked_image, frame, np.asarray(colors))
         #currentImage[xx:xx+wd, yy:yy+ht] = img
 
-        
         self.label.setPixmap(self.frameToPixmap(currentImage, cv2.COLOR_BGR2RGB))
-
 
         #black_mask = np.all(result == 0, axis=-1)
         #alpha = np.uint8(np.logical_not(black_mask)) * 255
